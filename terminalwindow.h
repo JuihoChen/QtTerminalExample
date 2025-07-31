@@ -3,6 +3,7 @@
 #define TERMINALWINDOW_H
 
 #include <QMainWindow>
+#include <QTabWidget>
 #include <qtermwidget.h>
 
 QT_BEGIN_NAMESPACE
@@ -33,16 +34,24 @@ private slots:
     void resetFont();
     void updateStatusBar();
     void newTab();
+    void closeTab(int index);
+    void closeCurrentTab();
     void showContextMenu(const QPoint &pos);
     void selectAllText();
+    void onTabChanged(int index);
+    void onTerminalFinished();
 
 private:
     void setupUI();
     void setupMenus();
     void saveSettings();
     void loadSettings();
+    QTermWidget* createTerminal();
+    QTermWidget* getCurrentTerminal();
+    QString getNextTabTitle();
 
-    QTermWidget *terminal;
+    QTabWidget *tabWidget;
+    int tabCounter;
 };
 
 #endif // TERMINALWINDOW_H
