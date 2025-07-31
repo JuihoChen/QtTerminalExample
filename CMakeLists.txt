@@ -5,7 +5,11 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
 
-add_executable(QtTerminalExample main.cpp)
+add_executable(QtTerminalExample 
+    main.cpp
+    terminalwindow.cpp
+    terminalwindow.h
+)
 
 # Add qtermwidget include directory manually
 target_include_directories(QtTerminalExample PRIVATE /usr/include/qtermwidget5)
