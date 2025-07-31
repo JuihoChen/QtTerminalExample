@@ -22,3 +22,5 @@ cmake_install.cmake
 Makefile
 QtTerminalExample_autogen/
 compile_commands.json
+
+.vscode/
