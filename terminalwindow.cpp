@@ -19,6 +19,10 @@
 #include <QKeySequence>
 #include <QTabWidget>
 #include <QTabBar>
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QHeaderView>
 
 TerminalWindow::TerminalWindow(QWidget *parent) 
     : QMainWindow(parent), tabWidget(nullptr), tabCounter(1)
@@ -277,16 +281,23 @@ QString TerminalWindow::getNextTabTitle()
 
 void TerminalWindow::setupUI()
 {
-    setWindowTitle("Advanced Qt Terminal");
+    setWindowTitle("Advanced Qt Terminal with SSH Connections");
 
-    // Create central widget and layout
+    // Create central widget and main layout
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    QVBoxLayout *layout = new QVBoxLayout(centralWidget);
-    layout->setContentsMargins(2, 2, 2, 2);
+    QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(2, 2, 2, 2);
 
-    // Create tab widget
+    // Create splitter for tree and tabs
+    splitter = new QSplitter(Qt::Horizontal, this);
+    
+    // Setup connection tree
+    setupConnectionTree();
+    splitter->addWidget(connectionTree);
+    
+    // Create tab widget (existing code)
     tabWidget = new QTabWidget(this);
     tabWidget->setTabsClosable(true);
     tabWidget->setMovable(true);
@@ -296,13 +307,19 @@ void TerminalWindow::setupUI()
     connect(tabWidget, &QTabWidget::tabCloseRequested, this, &TerminalWindow::closeTab);
     connect(tabWidget, &QTabWidget::currentChanged, this, &TerminalWindow::onTabChanged);
 
-    layout->addWidget(tabWidget);
+    splitter->addWidget(tabWidget);
+    
+    // Set splitter proportions (18% tree, 82% tabs)
+    splitter->setSizes({180, 820});
+    splitter->setCollapsible(0, false);  // Don't allow tree to be collapsed completely
+    
+    mainLayout->addWidget(splitter);
 
     // Status bar
     statusBar()->showMessage("Ready");
 
     // Set initial size
-    resize(1200, 800);
+    resize(1400, 800);  // Slightly wider to accommodate tree
 }
 
 void TerminalWindow::setupMenus()
@@ -344,6 +361,148 @@ void TerminalWindow::setupMenus()
     viewMenu->addAction("Zoom &In", this, &TerminalWindow::increaseFont, QKeySequence::ZoomIn);
     viewMenu->addAction("Zoom &Out", this, &TerminalWindow::decreaseFont, QKeySequence::ZoomOut);
     viewMenu->addAction("&Reset Zoom", this, &TerminalWindow::resetFont, QKeySequence(Qt::CTRL + Qt::Key_0));
+}
+
+// New method to setup the connection tree:
+void TerminalWindow::setupConnectionTree()
+{
+    connectionTree = new QTreeWidget(this);
+    connectionTree->setHeaderLabel("SSH Connections");
+    connectionTree->setMinimumWidth(200);
+    connectionTree->setMaximumWidth(400);
+    
+    // Enable context menu
+    connectionTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(connectionTree, &QTreeWidget::customContextMenuRequested,
+            this, &TerminalWindow::showConnectionContextMenu);
+    
+    // Connect double-click signal
+    connect(connectionTree, &QTreeWidget::itemDoubleClicked,
+            this, &TerminalWindow::onConnectionDoubleClicked);
+    
+    // Add some dummy connections for now
+    createDummyConnections();
+}
+
+// Method to create dummy connections (temporary for Feature 1):
+void TerminalWindow::createDummyConnections()
+{
+    // Create folder items
+    QTreeWidgetItem *prodFolder = new QTreeWidgetItem(connectionTree);
+    prodFolder->setText(0, "🏢 Production");
+    prodFolder->setExpanded(true);
+    
+    QTreeWidgetItem *devFolder = new QTreeWidgetItem(connectionTree);
+    devFolder->setText(0, "🔧 Development");
+    devFolder->setExpanded(true);
+    
+    QTreeWidgetItem *personalFolder = new QTreeWidgetItem(connectionTree);
+    personalFolder->setText(0, "👤 Personal");
+    personalFolder->setExpanded(true);
+    
+    // Add connection items to Production folder
+    QTreeWidgetItem *webServer = new QTreeWidgetItem(prodFolder);
+    webServer->setText(0, "🖥️ Web Server");
+    webServer->setToolTip(0, "user@192.168.1.10:22");
+    webServer->setData(0, Qt::UserRole, "ssh user@192.168.1.10");
+    
+    QTreeWidgetItem *dbServer = new QTreeWidgetItem(prodFolder);
+    dbServer->setText(0, "🗄️ Database Server");
+    dbServer->setToolTip(0, "admin@192.168.1.20:22");
+    dbServer->setData(0, Qt::UserRole, "ssh admin@192.168.1.20");
+    
+    // Add connection items to Development folder
+    QTreeWidgetItem *devBox = new QTreeWidgetItem(devFolder);
+    devBox->setText(0, "💻 Dev Box");
+    devBox->setToolTip(0, "dev@10.0.0.5:22");
+    devBox->setData(0, Qt::UserRole, "ssh dev@10.0.0.5");
+    
+    QTreeWidgetItem *testServer = new QTreeWidgetItem(devFolder);
+    testServer->setText(0, "🧪 Test Server");
+    testServer->setToolTip(0, "test@10.0.0.6:2222");
+    testServer->setData(0, Qt::UserRole, "ssh test@10.0.0.6 -p 2222");
+    
+    // Add connection to Personal folder
+    QTreeWidgetItem *vps = new QTreeWidgetItem(personalFolder);
+    vps->setText(0, "☁️ My VPS");
+    vps->setToolTip(0, "myuser@example.com:22");
+    vps->setData(0, Qt::UserRole, "ssh myuser@example.com");
+}
+
+// New slot for double-click on connection:
+void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column)
+{
+    Q_UNUSED(column)
+    
+    // Check if this is a connection item (has SSH command stored)
+    QString sshCommand = item->data(0, Qt::UserRole).toString();
+    if (sshCommand.isEmpty()) {
+        return; // This is a folder, not a connection
+    }
+    
+    // For now, just create a new tab and show the SSH command
+    // In Feature 4, we'll actually execute the SSH connection
+    QTermWidget *terminal = createTerminal();
+    QString tabTitle = QString("SSH: %1").arg(item->text(0).remove(0, 2)); // Remove emoji
+    
+    int index = tabWidget->addTab(terminal, tabTitle);
+    tabWidget->setCurrentIndex(index);
+    
+    // Show the SSH command that would be executed
+    terminal->sendText(QString("# Would execute: %1\n").arg(sshCommand));
+    terminal->sendText("# (SSH connection will be implemented in Feature 4)\n");
+    
+    terminal->setFocus();
+    updateStatusBar();
+}
+
+// New slot for connection tree context menu:
+void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
+{
+    QTreeWidgetItem *item = connectionTree->itemAt(pos);
+    
+    QMenu menu;
+    
+    if (item) {
+        QString sshCommand = item->data(0, Qt::UserRole).toString();
+        if (!sshCommand.isEmpty()) {
+            // This is a connection item
+            menu.addAction("🔌 Connect", [this, item]() {
+                onConnectionDoubleClicked(item, 0);
+            });
+            menu.addSeparator();
+            menu.addAction("✏️ Edit Connection", []() {
+                // Will implement in Feature 3
+            });
+            menu.addAction("🗑️ Delete Connection", []() {
+                // Will implement in Feature 3
+            });
+        } else {
+            // This is a folder
+            menu.addAction("➕ Add Connection", []() {
+                // Will implement in Feature 3
+            });
+            menu.addAction("📁 Add Folder", []() {
+                // Will implement in Feature 5
+            });
+        }
+        menu.addSeparator();
+    }
+    
+    menu.addAction("➕ New Connection", []() {
+        // Will implement in Feature 3
+    });
+    menu.addAction("📁 New Folder", []() {
+        // Will implement in Feature 5
+    });
+    menu.addSeparator();
+    menu.addAction("🔄 Refresh", [this]() {
+        // Will refresh from saved connections in Feature 2
+    });
+    
+    if (!menu.isEmpty()) {
+        menu.exec(connectionTree->mapToGlobal(pos));
+    }
 }
 
 void TerminalWindow::showContextMenu(const QPoint &pos)

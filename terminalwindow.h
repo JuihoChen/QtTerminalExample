@@ -1,9 +1,11 @@
-// ============ terminalwindow.h ============
+// ============ Updated terminalwindow.h ============
 #ifndef TERMINALWINDOW_H
 #define TERMINALWINDOW_H
 
 #include <QMainWindow>
 #include <QTabWidget>
+#include <QTreeWidget>
+#include <QSplitter>
 #include <qtermwidget.h>
 
 QT_BEGIN_NAMESPACE
@@ -40,10 +42,16 @@ private slots:
     void selectAllText();
     void onTabChanged(int index);
     void onTerminalFinished();
+    
+    // New slots for connection tree
+    void onConnectionDoubleClicked(QTreeWidgetItem *item, int column);
+    void showConnectionContextMenu(const QPoint &pos);
 
 private:
     void setupUI();
     void setupMenus();
+    void setupConnectionTree();
+    void createDummyConnections();
     void saveSettings();
     void loadSettings();
     QTermWidget* createTerminal();
@@ -51,6 +59,8 @@ private:
     QString getNextTabTitle();
 
     QTabWidget *tabWidget;
+    QTreeWidget *connectionTree;
+    QSplitter *splitter;
     int tabCounter;
 };
 
