@@ -1,0 +1,24 @@
+# Ignore build artifacts and Qt generated files
+build/
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+*.user
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.db
+*.pyc
+*.pyo
+*.pyd
+*.DS_Store
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+QtTerminalExample_autogen/
+compile_commands.json
