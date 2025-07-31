@@ -216,14 +216,31 @@ void TerminalWindow::onTerminalFinished()
 {
     // Find which terminal finished and close its tab
     QTermWidget *finishedTerminal = qobject_cast<QTermWidget*>(sender());
-    if (finishedTerminal) {
-        for (int i = 0; i < tabWidget->count(); ++i) {
-            if (tabWidget->widget(i) == finishedTerminal) {
-                closeTab(i);
-                break;
-            }
+    if (!finishedTerminal) return;
+    
+    // Find the tab index
+    int tabIndex = -1;
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        if (tabWidget->widget(i) == finishedTerminal) {
+            tabIndex = i;
+            break;
         }
     }
+    
+    if (tabIndex == -1) return;
+    
+    // If this is the last tab, quit the application directly without confirmation
+    if (tabWidget->count() <= 1) {
+        QApplication::quit();
+        return;
+    }
+    
+    // For multiple tabs, just close this tab
+    QWidget *widget = tabWidget->widget(tabIndex);
+    tabWidget->removeTab(tabIndex);
+    widget->deleteLater();
+    
+    updateStatusBar();
 }
 
 QTermWidget* TerminalWindow::createTerminal()
