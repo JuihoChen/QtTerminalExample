@@ -17,6 +17,28 @@ class QStatusBar;
 class QCloseEvent;
 QT_END_NAMESPACE
 
+// New structure to hold connection data
+struct SSHConnection {
+    QString name;
+    QString host;
+    QString username;
+    int port;
+    QString folder;  // Which folder this connection belongs to
+    
+    SSHConnection() : port(22) {}
+    SSHConnection(const QString &n, const QString &h, const QString &u, int p = 22, const QString &f = "")
+        : name(n), host(h), username(u), port(p), folder(f) {}
+    
+    // Add equality operator for QList::indexOf()
+    bool operator==(const SSHConnection &other) const {
+        return name == other.name && 
+               host == other.host && 
+               username == other.username && 
+               port == other.port && 
+               folder == other.folder;
+    }
+};
+
 class TerminalWindow : public QMainWindow
 {
     Q_OBJECT
@@ -43,7 +65,7 @@ private slots:
     void onTabChanged(int index);
     void onTerminalFinished();
     
-    // New slots for connection tree
+    // Connection tree slots
     void onConnectionDoubleClicked(QTreeWidgetItem *item, int column);
     void showConnectionContextMenu(const QPoint &pos);
 
@@ -51,17 +73,26 @@ private:
     void setupUI();
     void setupMenus();
     void setupConnectionTree();
-    void createDummyConnections();
     void saveSettings();
     void loadSettings();
     QTermWidget* createTerminal();
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
+    
+    // New methods for connection management
+    void loadConnections();
+    void saveConnections();
+    void refreshConnectionTree();
+    void createDefaultConnections();  // Creates initial connections if file doesn't exist
+    QString getConnectionsFilePath() const;
 
     QTabWidget *tabWidget;
     QTreeWidget *connectionTree;
     QSplitter *splitter;
     int tabCounter;
+    
+    // New member to store connections
+    QList<SSHConnection> connections;
 };
 
 #endif // TERMINALWINDOW_H

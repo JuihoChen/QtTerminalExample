@@ -39,12 +39,12 @@ A modern Qt-based terminal emulator with built-in SSH connection management, ins
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install qt5-default qtermwidget5-dev build-essential
+sudo apt install qtbase5-dev qtermwidget5-dev build-essential
 ```
 
 **Fedora/RHEL:**
 ```bash
-sudo dnf install qt5-qtbase-devel qtermwidget-qt5-devel gcc-c++
+sudo dnf install qt5-qtbase-devel qtermwidget-qt5-devel gcc-c++ make
 ```
 
 ### Compile

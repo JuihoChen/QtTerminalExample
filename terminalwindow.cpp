@@ -23,7 +23,15 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFile>
+#include <QDir>
+#include <QStandardPaths>
+#include <QDebug>
 
+// Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
     : QMainWindow(parent), tabWidget(nullptr), tabCounter(1)
 {
@@ -31,12 +39,17 @@ TerminalWindow::TerminalWindow(QWidget *parent)
     setupMenus();
     loadSettings();
     
+    // Load connections from file
+    loadConnections();
+    
     // Create first tab
     newTab();
 }
 
+// Update destructor to save connections on exit:
 TerminalWindow::~TerminalWindow()
 {
+    saveConnections();  // Save connections before exit
     saveSettings();
 }
 
@@ -363,7 +376,7 @@ void TerminalWindow::setupMenus()
     viewMenu->addAction("&Reset Zoom", this, &TerminalWindow::resetFont, QKeySequence(Qt::CTRL + Qt::Key_0));
 }
 
-// New method to setup the connection tree:
+// Update setupConnectionTree() method:
 void TerminalWindow::setupConnectionTree()
 {
     connectionTree = new QTreeWidget(this);
@@ -380,53 +393,205 @@ void TerminalWindow::setupConnectionTree()
     connect(connectionTree, &QTreeWidget::itemDoubleClicked,
             this, &TerminalWindow::onConnectionDoubleClicked);
     
-    // Add some dummy connections for now
-    createDummyConnections();
+    // Don't create dummy connections here anymore - loadConnections() will handle it
 }
 
-// Method to create dummy connections (temporary for Feature 1):
-void TerminalWindow::createDummyConnections()
+// Replace createDummyConnections() with these new methods:
+
+QString TerminalWindow::getConnectionsFilePath() const
 {
-    // Create folder items
-    QTreeWidgetItem *prodFolder = new QTreeWidgetItem(connectionTree);
-    prodFolder->setText(0, "🏢 Production");
-    prodFolder->setExpanded(true);
+    QString configDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    QDir dir(configDir);
+    if (!dir.exists("QtTerminalExample")) {
+        dir.mkpath("QtTerminalExample");
+    }
+    return configDir + "/QtTerminalExample/connections.json";
+}
+
+void TerminalWindow::createDefaultConnections()
+{
+    // Create some default connections if no file exists
+    connections.clear();
     
-    QTreeWidgetItem *devFolder = new QTreeWidgetItem(connectionTree);
-    devFolder->setText(0, "🔧 Development");
-    devFolder->setExpanded(true);
+    // Production folder connections
+    connections.append(SSHConnection("Web Server", "192.168.1.10", "user", 22, "Production"));
+    connections.append(SSHConnection("Database Server", "192.168.1.20", "admin", 22, "Production"));
     
-    QTreeWidgetItem *personalFolder = new QTreeWidgetItem(connectionTree);
-    personalFolder->setText(0, "👤 Personal");
-    personalFolder->setExpanded(true);
+    // Development folder connections
+    connections.append(SSHConnection("Dev Box", "10.0.0.5", "dev", 22, "Development"));
+    connections.append(SSHConnection("Test Server", "10.0.0.6", "test", 2222, "Development"));
     
-    // Add connection items to Production folder
-    QTreeWidgetItem *webServer = new QTreeWidgetItem(prodFolder);
-    webServer->setText(0, "🖥️ Web Server");
-    webServer->setToolTip(0, "user@192.168.1.10:22");
-    webServer->setData(0, Qt::UserRole, "ssh user@192.168.1.10");
+    // Personal folder connections
+    connections.append(SSHConnection("My VPS", "example.com", "myuser", 22, "Personal"));
     
-    QTreeWidgetItem *dbServer = new QTreeWidgetItem(prodFolder);
-    dbServer->setText(0, "🗄️ Database Server");
-    dbServer->setToolTip(0, "admin@192.168.1.20:22");
-    dbServer->setData(0, Qt::UserRole, "ssh admin@192.168.1.20");
+    // Save the default connections
+    saveConnections();
+}
+
+void TerminalWindow::loadConnections()
+{
+    QString filePath = getConnectionsFilePath();
+    QFile file(filePath);
     
-    // Add connection items to Development folder
-    QTreeWidgetItem *devBox = new QTreeWidgetItem(devFolder);
-    devBox->setText(0, "💻 Dev Box");
-    devBox->setToolTip(0, "dev@10.0.0.5:22");
-    devBox->setData(0, Qt::UserRole, "ssh dev@10.0.0.5");
+    if (!file.exists()) {
+        qDebug() << "Connections file doesn't exist, creating default connections";
+        createDefaultConnections();
+        return;
+    }
     
-    QTreeWidgetItem *testServer = new QTreeWidgetItem(devFolder);
-    testServer->setText(0, "🧪 Test Server");
-    testServer->setToolTip(0, "test@10.0.0.6:2222");
-    testServer->setData(0, Qt::UserRole, "ssh test@10.0.0.6 -p 2222");
+    if (!file.open(QIODevice::ReadOnly)) {
+        qDebug() << "Failed to open connections file for reading";
+        createDefaultConnections();
+        return;
+    }
     
-    // Add connection to Personal folder
-    QTreeWidgetItem *vps = new QTreeWidgetItem(personalFolder);
-    vps->setText(0, "☁️ My VPS");
-    vps->setToolTip(0, "myuser@example.com:22");
-    vps->setData(0, Qt::UserRole, "ssh myuser@example.com");
+    QByteArray data = file.readAll();
+    file.close();
+    
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &error);
+    
+    if (error.error != QJsonParseError::NoError) {
+        qDebug() << "JSON parse error:" << error.errorString();
+        createDefaultConnections();
+        return;
+    }
+    
+    connections.clear();
+    QJsonObject root = doc.object();
+    QJsonArray connectionsArray = root["connections"].toArray();
+    
+    for (const QJsonValue &value : connectionsArray) {
+        QJsonObject connObj = value.toObject();
+        SSHConnection conn;
+        conn.name = connObj["name"].toString();
+        conn.host = connObj["host"].toString();
+        conn.username = connObj["username"].toString();
+        conn.port = connObj["port"].toInt(22);
+        conn.folder = connObj["folder"].toString();
+        connections.append(conn);
+    }
+    
+    qDebug() << "Loaded" << connections.size() << "connections";
+    refreshConnectionTree();
+}
+
+void TerminalWindow::saveConnections()
+{
+    QString filePath = getConnectionsFilePath();
+    QFile file(filePath);
+    
+    if (!file.open(QIODevice::WriteOnly)) {
+        qDebug() << "Failed to open connections file for writing";
+        return;
+    }
+    
+    QJsonObject root;
+    QJsonArray connectionsArray;
+    
+    for (const SSHConnection &conn : connections) {
+        QJsonObject connObj;
+        connObj["name"] = conn.name;
+        connObj["host"] = conn.host;
+        connObj["username"] = conn.username;
+        connObj["port"] = conn.port;
+        connObj["folder"] = conn.folder;
+        connectionsArray.append(connObj);
+    }
+    
+    root["connections"] = connectionsArray;
+    root["version"] = "1.0";
+    
+    QJsonDocument doc(root);
+    file.write(doc.toJson());
+    file.close();
+    
+    qDebug() << "Saved" << connections.size() << "connections";
+}
+
+void TerminalWindow::refreshConnectionTree()
+{
+    connectionTree->clear();
+    
+    // Create folder map to organize connections
+    QMap<QString, QTreeWidgetItem*> folders;
+    
+    // Create folders first
+    QStringList folderNames;
+    for (const SSHConnection &conn : connections) {
+        if (!conn.folder.isEmpty() && !folderNames.contains(conn.folder)) {
+            folderNames.append(conn.folder);
+        }
+    }
+    folderNames.sort();
+    
+    // Create folder items with emoji icons
+    for (const QString &folderName : folderNames) {
+        QString displayName;
+        if (folderName == "Production") {
+            displayName = "🏢 Production";
+        } else if (folderName == "Development") {
+            displayName = "🔧 Development";
+        } else if (folderName == "Personal") {
+            displayName = "👤 Personal";
+        } else {
+            displayName = "📁 " + folderName;
+        }
+        
+        QTreeWidgetItem *folder = new QTreeWidgetItem(connectionTree);
+        folder->setText(0, displayName);
+        folder->setExpanded(true);
+        folders[folderName] = folder;
+    }
+    
+    // Add connections to their folders
+    for (const SSHConnection &conn : connections) {
+        QTreeWidgetItem *parent = nullptr;
+        
+        if (!conn.folder.isEmpty() && folders.contains(conn.folder)) {
+            parent = folders[conn.folder];
+        } else {
+            // Create connection at root level if no folder
+            parent = connectionTree->invisibleRootItem();
+        }
+        
+        QTreeWidgetItem *item = new QTreeWidgetItem(parent);
+        
+        // Add emoji icon based on connection name
+        QString displayName;
+        QString lowerName = conn.name.toLower();
+        if (lowerName.contains("web") || lowerName.contains("www")) {
+            displayName = "🖥️ " + conn.name;
+        } else if (lowerName.contains("database") || lowerName.contains("db")) {
+            displayName = "🗄️ " + conn.name;
+        } else if (lowerName.contains("dev")) {
+            displayName = "💻 " + conn.name;
+        } else if (lowerName.contains("test")) {
+            displayName = "🧪 " + conn.name;
+        } else if (lowerName.contains("vps") || lowerName.contains("cloud")) {
+            displayName = "☁️ " + conn.name;
+        } else {
+            displayName = "🖥️ " + conn.name;
+        }
+        
+        item->setText(0, displayName);
+        
+        // Set tooltip with connection details
+        QString tooltip = QString("%1@%2:%3").arg(conn.username, conn.host).arg(conn.port);
+        item->setToolTip(0, tooltip);
+        
+        // Store SSH command in item data
+        QString sshCommand;
+        if (conn.port == 22) {
+            sshCommand = QString("ssh %1@%2").arg(conn.username, conn.host);
+        } else {
+            sshCommand = QString("ssh %1@%2 -p %3").arg(conn.username, conn.host).arg(conn.port);
+        }
+        item->setData(0, Qt::UserRole, sshCommand);
+        
+        // Store connection index for editing (we'll use this in Feature 3)
+        item->setData(0, Qt::UserRole + 1, connections.indexOf(conn));
+    }
 }
 
 // New slot for double-click on connection:
@@ -456,7 +621,7 @@ void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column
     updateStatusBar();
 }
 
-// New slot for connection tree context menu:
+// Update showConnectionContextMenu to include refresh functionality:
 void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
 {
     QTreeWidgetItem *item = connectionTree->itemAt(pos);
@@ -497,7 +662,7 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
     });
     menu.addSeparator();
     menu.addAction("🔄 Refresh", [this]() {
-        // Will refresh from saved connections in Feature 2
+        loadConnections();  // Reload from file and refresh tree
     });
     
     if (!menu.isEmpty()) {
