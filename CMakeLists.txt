@@ -10,6 +10,7 @@ find_package(Qt5 COMPONENTS Widgets REQUIRED)
 add_executable(QtTerminalExample
     main.cpp
     terminalwindow.cpp
+    connectiondialog.cpp
 )
 
 # Try to find qtermwidget, fallback to manual path

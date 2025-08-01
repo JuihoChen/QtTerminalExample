@@ -17,7 +17,7 @@ class QStatusBar;
 class QCloseEvent;
 QT_END_NAMESPACE
 
-// New structure to hold connection data
+// Structure to hold connection data
 struct SSHConnection {
     QString name;
     QString host;
@@ -68,6 +68,12 @@ private slots:
     // Connection tree slots
     void onConnectionDoubleClicked(QTreeWidgetItem *item, int column);
     void showConnectionContextMenu(const QPoint &pos);
+    
+    // Feature 3: Connection management slots
+    void addNewConnection();
+    void addConnectionToFolder(const QString &folderName);
+    void editConnection(QTreeWidgetItem *item);
+    void deleteConnection(QTreeWidgetItem *item);
 
 private:
     void setupUI();
@@ -79,19 +85,24 @@ private:
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
     
-    // New methods for connection management
+    // Connection management methods
     void loadConnections();
     void saveConnections();
     void refreshConnectionTree();
     void createDefaultConnections();  // Creates initial connections if file doesn't exist
     QString getConnectionsFilePath() const;
+    
+    // Feature 3: Helper methods
+    QStringList getExistingFolders() const;
+    QTreeWidgetItem* findConnectionItem(const SSHConnection &connection);
+    bool connectionExists(const SSHConnection &connection, int excludeIndex = -1) const;
 
     QTabWidget *tabWidget;
     QTreeWidget *connectionTree;
     QSplitter *splitter;
     int tabCounter;
     
-    // New member to store connections
+    // Store connections
     QList<SSHConnection> connections;
 };
 

@@ -1,5 +1,6 @@
-// ============ terminalwindow.cpp ============
+// ============ Updated terminalwindow.cpp ============
 #include "terminalwindow.h"
+#include "connectiondialog.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -167,10 +168,11 @@ void TerminalWindow::updateStatusBar()
     if (!terminal) return;
     
     QFont font = terminal->getTerminalFont();
-    statusBar()->showMessage(QString("Font: %1 %2pt | Tabs: %3")
+    statusBar()->showMessage(QString("Font: %1 %2pt | Tabs: %3 | Connections: %4")
                             .arg(font.family())
                             .arg(font.pointSize())
-                            .arg(tabWidget->count()));
+                            .arg(tabWidget->count())
+                            .arg(connections.count()));
 }
 
 void TerminalWindow::newTab()
@@ -374,6 +376,14 @@ void TerminalWindow::setupMenus()
     viewMenu->addAction("Zoom &In", this, &TerminalWindow::increaseFont, QKeySequence::ZoomIn);
     viewMenu->addAction("Zoom &Out", this, &TerminalWindow::decreaseFont, QKeySequence::ZoomOut);
     viewMenu->addAction("&Reset Zoom", this, &TerminalWindow::resetFont, QKeySequence(Qt::CTRL + Qt::Key_0));
+    
+    // Connections menu (Feature 3)
+    QMenu *connectionsMenu = menuBar->addMenu("&Connections");
+    connectionsMenu->addAction("&New Connection...", this, &TerminalWindow::addNewConnection, QKeySequence(Qt::CTRL + Qt::Key_N));
+    connectionsMenu->addSeparator();
+    connectionsMenu->addAction("&Refresh", this, [this]() {
+        loadConnections();
+    }, QKeySequence::Refresh);
 }
 
 // Update setupConnectionTree() method:
@@ -392,11 +402,7 @@ void TerminalWindow::setupConnectionTree()
     // Connect double-click signal
     connect(connectionTree, &QTreeWidget::itemDoubleClicked,
             this, &TerminalWindow::onConnectionDoubleClicked);
-    
-    // Don't create dummy connections here anymore - loadConnections() will handle it
 }
-
-// Replace createDummyConnections() with these new methods:
 
 QString TerminalWindow::getConnectionsFilePath() const
 {
@@ -474,6 +480,7 @@ void TerminalWindow::loadConnections()
     
     qDebug() << "Loaded" << connections.size() << "connections";
     refreshConnectionTree();
+    updateStatusBar();
 }
 
 void TerminalWindow::saveConnections()
@@ -534,6 +541,10 @@ void TerminalWindow::refreshConnectionTree()
             displayName = "🔧 Development";
         } else if (folderName == "Personal") {
             displayName = "👤 Personal";
+        } else if (folderName == "Testing") {
+            displayName = "🧪 Testing";
+        } else if (folderName == "Staging") {
+            displayName = "🚀 Staging";
         } else {
             displayName = "📁 " + folderName;
         }
@@ -541,6 +552,10 @@ void TerminalWindow::refreshConnectionTree()
         QTreeWidgetItem *folder = new QTreeWidgetItem(connectionTree);
         folder->setText(0, displayName);
         folder->setExpanded(true);
+        
+        // Store original folder name for reference
+        folder->setData(0, Qt::UserRole + 2, folderName);
+        
         folders[folderName] = folder;
     }
     
@@ -589,7 +604,7 @@ void TerminalWindow::refreshConnectionTree()
         }
         item->setData(0, Qt::UserRole, sshCommand);
         
-        // Store connection index for editing (we'll use this in Feature 3)
+        // Store connection index for editing
         item->setData(0, Qt::UserRole + 1, connections.indexOf(conn));
     }
 }
@@ -621,7 +636,167 @@ void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column
     updateStatusBar();
 }
 
-// Update showConnectionContextMenu to include refresh functionality:
+// Feature 3 Implementation: Connection Management
+
+void TerminalWindow::addNewConnection()
+{
+    ConnectionDialog dialog(this);
+    dialog.setAvailableFolders(getExistingFolders());
+    
+    if (dialog.exec() == QDialog::Accepted) {
+        SSHConnection newConnection = dialog.getConnection();
+        
+        // Check if connection already exists
+        if (connectionExists(newConnection)) {
+            QMessageBox::warning(this, "Duplicate Connection", 
+                "A connection with this name already exists in the same folder.");
+            return;
+        }
+        
+        // Add the connection
+        connections.append(newConnection);
+        saveConnections();
+        refreshConnectionTree();
+        updateStatusBar();
+        
+        statusBar()->showMessage(QString("Added connection: %1").arg(newConnection.name), 3000);
+    }
+}
+
+void TerminalWindow::addConnectionToFolder(const QString &folderName)
+{
+    // Create connection with pre-selected folder
+    SSHConnection conn;
+    conn.folder = folderName;
+    
+    // Create dialog with the pre-configured connection
+    ConnectionDialog dialog(conn, this);
+    dialog.setWindowTitle("New Connection in " + folderName);
+    dialog.setAvailableFolders(getExistingFolders());
+    
+    if (dialog.exec() == QDialog::Accepted) {
+        SSHConnection newConnection = dialog.getConnection();
+        
+        // Check if connection already exists
+        if (connectionExists(newConnection)) {
+            QMessageBox::warning(this, "Duplicate Connection", 
+                "A connection with this name already exists in the same folder.");
+            return;
+        }
+        
+        // Add the connection
+        connections.append(newConnection);
+        saveConnections();
+        refreshConnectionTree();
+        updateStatusBar();
+        
+        statusBar()->showMessage(QString("Added connection: %1 to %2").arg(newConnection.name, folderName), 3000);
+    }
+}
+
+void TerminalWindow::editConnection(QTreeWidgetItem *item)
+{
+    if (!item) return;
+    
+    // Get connection index
+    int connectionIndex = item->data(0, Qt::UserRole + 1).toInt();
+    if (connectionIndex < 0 || connectionIndex >= connections.size()) {
+        QMessageBox::warning(this, "Error", "Connection not found.");
+        return;
+    }
+    
+    SSHConnection originalConnection = connections[connectionIndex];
+    
+    ConnectionDialog dialog(originalConnection, this);
+    dialog.setAvailableFolders(getExistingFolders());
+    
+    if (dialog.exec() == QDialog::Accepted) {
+        SSHConnection editedConnection = dialog.getConnection();
+        
+        // Check if the edited connection conflicts with existing ones (excluding the current one)
+        if (connectionExists(editedConnection, connectionIndex)) {
+            QMessageBox::warning(this, "Duplicate Connection", 
+                "A connection with this name already exists in the same folder.");
+            return;
+        }
+        
+        // Update the connection
+        connections[connectionIndex] = editedConnection;
+        saveConnections();
+        refreshConnectionTree();
+        updateStatusBar();
+        
+        statusBar()->showMessage(QString("Updated connection: %1").arg(editedConnection.name), 3000);
+    }
+}
+
+void TerminalWindow::deleteConnection(QTreeWidgetItem *item)
+{
+    if (!item) return;
+    
+    // Get connection index
+    int connectionIndex = item->data(0, Qt::UserRole + 1).toInt();
+    if (connectionIndex < 0 || connectionIndex >= connections.size()) {
+        QMessageBox::warning(this, "Error", "Connection not found.");
+        return;
+    }
+    
+    SSHConnection connection = connections[connectionIndex];
+    
+    int ret = QMessageBox::question(this, "Delete Connection",
+        QString("Are you sure you want to delete the connection '%1'?").arg(connection.name),
+        QMessageBox::Yes | QMessageBox::No);
+    
+    if (ret == QMessageBox::Yes) {
+        connections.removeAt(connectionIndex);
+        saveConnections();
+        refreshConnectionTree();
+        updateStatusBar();
+        
+        statusBar()->showMessage(QString("Deleted connection: %1").arg(connection.name), 3000);
+    }
+}
+
+// Helper methods for Feature 3
+
+QStringList TerminalWindow::getExistingFolders() const
+{
+    QStringList folders;
+    folders << "Production" << "Development" << "Personal" << "Testing" << "Staging";
+    
+    // Add any custom folders from existing connections
+    for (const SSHConnection &conn : connections) {
+        if (!conn.folder.isEmpty() && !folders.contains(conn.folder)) {
+            folders.append(conn.folder);
+        }
+    }
+    
+    folders.sort();
+    return folders;
+}
+
+QTreeWidgetItem* TerminalWindow::findConnectionItem(const SSHConnection &connection)
+{
+    // This method would help find a specific connection item in the tree
+    // Implementation depends on how you want to match connections
+    Q_UNUSED(connection)
+    return nullptr; // Placeholder implementation
+}
+
+bool TerminalWindow::connectionExists(const SSHConnection &connection, int excludeIndex) const
+{
+    for (int i = 0; i < connections.size(); ++i) {
+        if (i == excludeIndex) continue; // Skip the connection being edited
+        
+        const SSHConnection &existing = connections[i];
+        if (existing.name == connection.name && existing.folder == connection.folder) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Updated showConnectionContextMenu to include Feature 3 functionality:
 void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
 {
     QTreeWidgetItem *item = connectionTree->itemAt(pos);
@@ -636,29 +811,26 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
                 onConnectionDoubleClicked(item, 0);
             });
             menu.addSeparator();
-            menu.addAction("✏️ Edit Connection", []() {
-                // Will implement in Feature 3
+            menu.addAction("✏️ Edit Connection", [this, item]() {
+                editConnection(item);
             });
-            menu.addAction("🗑️ Delete Connection", []() {
-                // Will implement in Feature 3
+            menu.addAction("🗑️ Delete Connection", [this, item]() {
+                deleteConnection(item);
             });
         } else {
             // This is a folder
-            menu.addAction("➕ Add Connection", []() {
-                // Will implement in Feature 3
-            });
-            menu.addAction("📁 Add Folder", []() {
-                // Will implement in Feature 5
-            });
+            QString folderName = item->data(0, Qt::UserRole + 2).toString();
+            if (!folderName.isEmpty()) {
+                menu.addAction("➕ Add Connection to " + folderName, [this, folderName]() {
+                    addConnectionToFolder(folderName);
+                });
+                menu.addSeparator();
+            }
         }
-        menu.addSeparator();
     }
     
-    menu.addAction("➕ New Connection", []() {
-        // Will implement in Feature 3
-    });
-    menu.addAction("📁 New Folder", []() {
-        // Will implement in Feature 5
+    menu.addAction("➕ New Connection", [this]() {
+        addNewConnection();
     });
     menu.addSeparator();
     menu.addAction("🔄 Refresh", [this]() {
