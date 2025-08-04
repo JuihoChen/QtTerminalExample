@@ -1,4 +1,4 @@
-// ============ main.cpp ============
+// ============ Updated main.cpp with Feature 4 ============
 #include <QApplication>
 #include "terminalwindow.h"
 
@@ -11,6 +11,9 @@ int main(int argc, char *argv[])
     
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
+
+    // Register the custom type for QVariant system (Feature 4)
+    qRegisterMetaType<SSHConnection>("SSHConnection");
 
     TerminalWindow window;
     window.show();

@@ -1,4 +1,4 @@
-// ============ Updated terminalwindow.h ============
+// ============ Updated terminalwindow.h with Feature 4 ============
 #ifndef TERMINALWINDOW_H
 #define TERMINALWINDOW_H
 
@@ -39,6 +39,9 @@ struct SSHConnection {
     }
 };
 
+// Make SSHConnection available to QVariant system for Feature 4
+Q_DECLARE_METATYPE(SSHConnection)
+
 class TerminalWindow : public QMainWindow
 {
     Q_OBJECT
@@ -74,6 +77,9 @@ private slots:
     void addConnectionToFolder(const QString &folderName);
     void editConnection(QTreeWidgetItem *item);
     void deleteConnection(QTreeWidgetItem *item);
+    
+    // Feature 4: SSH connection slots
+    void connectToSSH(QTreeWidgetItem *item);
 
 private:
     void setupUI();
@@ -84,6 +90,9 @@ private:
     QTermWidget* createTerminal();
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
+    
+    // Feature 4: SSH terminal creation
+    QTermWidget* createSSHTerminal(const SSHConnection &connection);
     
     // Connection management methods
     void loadConnections();

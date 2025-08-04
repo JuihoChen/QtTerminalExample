@@ -1,4 +1,4 @@
-// ============ Updated terminalwindow.cpp ============
+// ============ Updated terminalwindow.cpp with Feature 4 ============
 #include "terminalwindow.h"
 #include "connectiondialog.h"
 
@@ -31,6 +31,8 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QInputDialog>
+#include <QTimer>
 
 // Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
@@ -280,6 +282,59 @@ QTermWidget* TerminalWindow::createTerminal()
     // Connect terminal finished signal
     connect(terminal, &QTermWidget::finished, this, &TerminalWindow::onTerminalFinished);
 
+    return terminal;
+}
+
+// Feature 4: Create SSH terminal with connection parameters
+QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
+{
+    QTermWidget *terminal = new QTermWidget(this);
+    
+    // Configure terminal
+    terminal->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(terminal, &QWidget::customContextMenuRequested, 
+            this, &TerminalWindow::showContextMenu);
+
+    // Set terminal properties
+    terminal->setColorScheme("Linux");
+    terminal->setTerminalFont(QFont("Monospace", 12));
+    terminal->setScrollBarPosition(QTermWidget::ScrollBarRight);
+    terminal->setMotionAfterPasting(2);
+
+    // Connect terminal finished signal
+    connect(terminal, &QTermWidget::finished, this, &TerminalWindow::onTerminalFinished);
+    
+    // Method: Start with bash and then execute SSH command
+    terminal->setShellProgram("/bin/bash");
+    terminal->startShellProgram();
+    
+    // Build SSH command
+    QString sshCommand;
+    if (connection.port == 22) {
+        sshCommand = QString("ssh %1@%2").arg(connection.username, connection.host);
+    } else {
+        sshCommand = QString("ssh %1@%2 -p %3").arg(connection.username, connection.host).arg(connection.port);
+    }
+    
+    // Add SSH options for better experience
+    sshCommand += " -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=10";
+    
+    // Use a timer to send the SSH command after the terminal is ready
+    QTimer::singleShot(200, terminal, [terminal, sshCommand, connection]() {
+        // Clear the terminal first
+        terminal->sendText("clear\n");
+        QTimer::singleShot(100, terminal, [terminal, sshCommand, connection]() {
+            // Show what we're connecting to
+            terminal->sendText(QString("echo 'Connecting to %1@%2:%3...'\n")
+                             .arg(connection.username, connection.host)
+                             .arg(connection.port));
+            QTimer::singleShot(100, terminal, [terminal, sshCommand]() {
+                // Execute the SSH command
+                terminal->sendText(sshCommand + "\n");
+            });
+        });
+    });
+    
     return terminal;
 }
 
@@ -595,45 +650,53 @@ void TerminalWindow::refreshConnectionTree()
         QString tooltip = QString("%1@%2:%3").arg(conn.username, conn.host).arg(conn.port);
         item->setToolTip(0, tooltip);
         
-        // Store SSH command in item data
-        QString sshCommand;
-        if (conn.port == 22) {
-            sshCommand = QString("ssh %1@%2").arg(conn.username, conn.host);
-        } else {
-            sshCommand = QString("ssh %1@%2 -p %3").arg(conn.username, conn.host).arg(conn.port);
-        }
-        item->setData(0, Qt::UserRole, sshCommand);
+        // Store connection data in item (Feature 4)
+        item->setData(0, Qt::UserRole, QVariant::fromValue(conn));
         
         // Store connection index for editing
         item->setData(0, Qt::UserRole + 1, connections.indexOf(conn));
     }
 }
 
-// New slot for double-click on connection:
+// Feature 4: Updated double-click handler for actual SSH connection
 void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column)
 {
     Q_UNUSED(column)
     
-    // Check if this is a connection item (has SSH command stored)
-    QString sshCommand = item->data(0, Qt::UserRole).toString();
-    if (sshCommand.isEmpty()) {
+    // Check if this is a connection item (has connection data stored)
+    QVariant connectionData = item->data(0, Qt::UserRole);
+    if (!connectionData.canConvert<SSHConnection>()) {
         return; // This is a folder, not a connection
     }
     
-    // For now, just create a new tab and show the SSH command
-    // In Feature 4, we'll actually execute the SSH connection
-    QTermWidget *terminal = createTerminal();
-    QString tabTitle = QString("SSH: %1").arg(item->text(0).remove(0, 2)); // Remove emoji
+    SSHConnection connection = qvariant_cast<SSHConnection>(connectionData);
+    
+    // Create SSH terminal with the connection
+    QTermWidget *terminal = createSSHTerminal(connection);
+    
+    // Create appropriate tab title
+    QString tabTitle = QString("SSH: %1").arg(connection.name);
     
     int index = tabWidget->addTab(terminal, tabTitle);
     tabWidget->setCurrentIndex(index);
     
-    // Show the SSH command that would be executed
-    terminal->sendText(QString("# Would execute: %1\n").arg(sshCommand));
-    terminal->sendText("# (SSH connection will be implemented in Feature 4)\n");
-    
+    // Focus the new terminal
     terminal->setFocus();
     updateStatusBar();
+    
+    // Show connection status in status bar
+    statusBar()->showMessage(QString("Connecting to %1@%2:%3...")
+                            .arg(connection.username, connection.host)
+                            .arg(connection.port), 5000);
+}
+
+// Feature 4: Connect to SSH from context menu
+void TerminalWindow::connectToSSH(QTreeWidgetItem *item)
+{
+    if (!item) return;
+    
+    // Trigger the same action as double-click
+    onConnectionDoubleClicked(item, 0);
 }
 
 // Feature 3 Implementation: Connection Management
@@ -796,7 +859,7 @@ bool TerminalWindow::connectionExists(const SSHConnection &connection, int exclu
     return false;
 }
 
-// Updated showConnectionContextMenu to include Feature 3 functionality:
+// Updated showConnectionContextMenu to include Feature 4 functionality:
 void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
 {
     QTreeWidgetItem *item = connectionTree->itemAt(pos);
@@ -804,11 +867,11 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
     QMenu menu;
     
     if (item) {
-        QString sshCommand = item->data(0, Qt::UserRole).toString();
-        if (!sshCommand.isEmpty()) {
+        QVariant connectionData = item->data(0, Qt::UserRole);
+        if (connectionData.canConvert<SSHConnection>()) {
             // This is a connection item
             menu.addAction("🔌 Connect", [this, item]() {
-                onConnectionDoubleClicked(item, 0);
+                connectToSSH(item);
             });
             menu.addSeparator();
             menu.addAction("✏️ Edit Connection", [this, item]() {
