@@ -1,4 +1,4 @@
-// ============ connectiondialog.h ============
+// ============ Updated connectiondialog.h with Password Field ============
 #ifndef CONNECTIONDIALOG_H
 #define CONNECTIONDIALOG_H
 
@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QGroupBox>
+#include <QCheckBox>
 
 struct SSHConnection; // Forward declaration
 
@@ -30,6 +31,7 @@ public:
 private slots:
     void validateInput();
     void onTestConnection();
+    void onShowPasswordChanged(bool show);
 
 private:
     void setupUI();
@@ -38,6 +40,8 @@ private:
     QLineEdit *nameEdit;
     QLineEdit *hostEdit;
     QLineEdit *usernameEdit;
+    QLineEdit *passwordEdit;  // Added password field
+    QCheckBox *showPasswordCheck;  // Added show password checkbox
     QSpinBox *portSpinBox;
     QComboBox *folderCombo;
     QPushButton *testButton;

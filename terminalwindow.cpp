@@ -1,4 +1,4 @@
-// ============ Updated terminalwindow.cpp with Feature 4 ============
+// ============ Updated terminalwindow.cpp with Password Support ============
 #include "terminalwindow.h"
 #include "connectiondialog.h"
 
@@ -33,6 +33,7 @@
 #include <QDebug>
 #include <QInputDialog>
 #include <QTimer>
+#include <QProcess>
 
 // Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
@@ -285,7 +286,7 @@ QTermWidget* TerminalWindow::createTerminal()
     return terminal;
 }
 
-// Feature 4: Create SSH terminal with connection parameters
+// Feature 4: Create SSH terminal with connection parameters and password support
 QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
 {
     QTermWidget *terminal = new QTermWidget(this);
@@ -316,21 +317,49 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
         sshCommand = QString("ssh %1@%2 -p %3").arg(connection.username, connection.host).arg(connection.port);
     }
     
-    // Add SSH options for better experience
+    // Add SSH options for better experience and host key handling
     sshCommand += " -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=10";
+    // Handle unknown hosts by adding them automatically (less secure but more convenient)
+    sshCommand += " -o StrictHostKeyChecking=accept-new";
     
     // Use a timer to send the SSH command after the terminal is ready
-    QTimer::singleShot(200, terminal, [terminal, sshCommand, connection]() {
+    QTimer::singleShot(200, terminal, [terminal, sshCommand, connection, this]() {
         // Clear the terminal first
         terminal->sendText("clear\n");
-        QTimer::singleShot(100, terminal, [terminal, sshCommand, connection]() {
-            // Show what we're connecting to
-            terminal->sendText(QString("echo 'Connecting to %1@%2:%3...'\n")
+        QTimer::singleShot(100, terminal, [terminal, sshCommand, connection, this]() {
+            // Show what we're connecting to (single clean message)
+            terminal->sendText(QString("# Connecting to %1@%2:%3...\n")
                              .arg(connection.username, connection.host)
                              .arg(connection.port));
-            QTimer::singleShot(100, terminal, [terminal, sshCommand]() {
-                // Execute the SSH command
-                terminal->sendText(sshCommand + "\n");
+            QTimer::singleShot(100, terminal, [terminal, sshCommand, connection, this]() {
+                // If password is provided, use sshpass for automatic password authentication
+                if (!connection.password.isEmpty()) {
+                    QString escapedPassword = connection.password;
+                    escapedPassword.replace("'", "'\"'\"'");
+                    QString sshpassCommand = QString("sshpass -p '%1' %2")
+                                           .arg(escapedPassword) // Escape single quotes
+                                           .arg(sshCommand);
+                    
+                    // Check if sshpass is available
+                    QProcess *checkProcess = new QProcess(this);
+                    checkProcess->start("which", QStringList() << "sshpass");
+                    checkProcess->waitForFinished(1000);
+                    
+                    if (checkProcess->exitCode() == 0) {
+                        // sshpass is available, use it
+                        terminal->sendText("# Using saved password...\n");
+                        terminal->sendText(sshpassCommand + "\n");
+                    } else {
+                        // sshpass not available, show warning and proceed with manual password entry
+                        terminal->sendText("# Warning: sshpass not found. You'll need to enter password manually.\n");
+                        terminal->sendText("# Install sshpass for automatic password authentication: sudo apt install sshpass\n");
+                        terminal->sendText(sshCommand + "\n");
+                    }
+                    checkProcess->deleteLater();
+                } else {
+                    // No password provided, proceed with key-based or manual authentication
+                    terminal->sendText(sshCommand + "\n");
+                }
             });
         });
     });
@@ -528,6 +557,7 @@ void TerminalWindow::loadConnections()
         conn.name = connObj["name"].toString();
         conn.host = connObj["host"].toString();
         conn.username = connObj["username"].toString();
+        conn.password = connObj["password"].toString(); // Load password field
         conn.port = connObj["port"].toInt(22);
         conn.folder = connObj["folder"].toString();
         connections.append(conn);
@@ -556,6 +586,7 @@ void TerminalWindow::saveConnections()
         connObj["name"] = conn.name;
         connObj["host"] = conn.host;
         connObj["username"] = conn.username;
+        connObj["password"] = conn.password; // Save password field
         connObj["port"] = conn.port;
         connObj["folder"] = conn.folder;
         connectionsArray.append(connObj);
@@ -646,8 +677,11 @@ void TerminalWindow::refreshConnectionTree()
         
         item->setText(0, displayName);
         
-        // Set tooltip with connection details
+        // Set tooltip with connection details (show if password is set)
         QString tooltip = QString("%1@%2:%3").arg(conn.username, conn.host).arg(conn.port);
+        if (!conn.password.isEmpty()) {
+            tooltip += " (password saved)";
+        }
         item->setToolTip(0, tooltip);
         
         // Store connection data in item (Feature 4)
@@ -685,9 +719,13 @@ void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column
     updateStatusBar();
     
     // Show connection status in status bar
-    statusBar()->showMessage(QString("Connecting to %1@%2:%3...")
-                            .arg(connection.username, connection.host)
-                            .arg(connection.port), 5000);
+    QString statusMessage = QString("Connecting to %1@%2:%3...")
+                           .arg(connection.username, connection.host)
+                           .arg(connection.port);
+    if (!connection.password.isEmpty()) {
+        statusMessage += " (using saved password)";
+    }
+    statusBar()->showMessage(statusMessage, 5000);
 }
 
 // Feature 4: Connect to SSH from context menu

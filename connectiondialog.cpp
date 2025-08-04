@@ -1,4 +1,4 @@
-// ============ connectiondialog.cpp ============
+// ============ Updated connectiondialog.cpp with Password Field ============
 #include "connectiondialog.h"
 #include "terminalwindow.h"
 
@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QApplication>
 #include <QProgressDialog>
+#include <QCheckBox>
 
 ConnectionDialog::ConnectionDialog(QWidget *parent)
     : QDialog(parent), editMode(false)
@@ -35,7 +36,7 @@ ConnectionDialog::ConnectionDialog(const SSHConnection &connection, QWidget *par
 void ConnectionDialog::setupUI()
 {
     setModal(true);
-    resize(400, 300);
+    resize(400, 350); // Increased height for password field
     
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     
@@ -57,6 +58,17 @@ void ConnectionDialog::setupUI()
     usernameEdit = new QLineEdit(this);
     usernameEdit->setPlaceholderText("SSH username");
     formLayout->addRow("Username:", usernameEdit);
+    
+    // Password field
+    passwordEdit = new QLineEdit(this);
+    passwordEdit->setPlaceholderText("SSH password (optional)");
+    passwordEdit->setEchoMode(QLineEdit::Password);
+    formLayout->addRow("Password:", passwordEdit);
+    
+    // Show password checkbox
+    showPasswordCheck = new QCheckBox("Show password", this);
+    connect(showPasswordCheck, &QCheckBox::toggled, this, &ConnectionDialog::onShowPasswordChanged);
+    formLayout->addRow("", showPasswordCheck);
     
     // Port field
     portSpinBox = new QSpinBox(this);
@@ -93,6 +105,7 @@ void ConnectionDialog::setupUI()
     connect(nameEdit, &QLineEdit::textChanged, this, &ConnectionDialog::validateInput);
     connect(hostEdit, &QLineEdit::textChanged, this, &ConnectionDialog::validateInput);
     connect(usernameEdit, &QLineEdit::textChanged, this, &ConnectionDialog::validateInput);
+    // Note: password is optional, so no validation needed
     
     // Initial validation
     validateInput();
@@ -106,6 +119,7 @@ void ConnectionDialog::populateFields(const SSHConnection &connection)
     nameEdit->setText(connection.name);
     hostEdit->setText(connection.host);
     usernameEdit->setText(connection.username);
+    passwordEdit->setText(connection.password);
     portSpinBox->setValue(connection.port);
     
     // Set folder, add it if it doesn't exist
@@ -121,6 +135,7 @@ SSHConnection ConnectionDialog::getConnection() const
     conn.name = nameEdit->text().trimmed();
     conn.host = hostEdit->text().trimmed();
     conn.username = usernameEdit->text().trimmed();
+    conn.password = passwordEdit->text(); // Don't trim password (spaces might be significant)
     conn.port = portSpinBox->value();
     conn.folder = folderCombo->currentText().trimmed();
     return conn;
@@ -137,11 +152,17 @@ void ConnectionDialog::validateInput()
     bool valid = !nameEdit->text().trimmed().isEmpty() &&
                  !hostEdit->text().trimmed().isEmpty() &&
                  !usernameEdit->text().trimmed().isEmpty();
+    // Note: password is optional for SSH connections (might use keys)
     
     buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
     
     // Update test button state
     testButton->setEnabled(!hostEdit->text().trimmed().isEmpty());
+}
+
+void ConnectionDialog::onShowPasswordChanged(bool show)
+{
+    passwordEdit->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
 }
 
 void ConnectionDialog::onTestConnection()
