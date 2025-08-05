@@ -265,47 +265,44 @@ void TerminalWindow::onTerminalFinished()
     updateStatusBar();
 }
 
-QTermWidget* TerminalWindow::createTerminal()
+// Add this new helper method to terminalwindow.cpp:
+QTermWidget* TerminalWindow::createTerminalWidget()
 {
     QTermWidget *terminal = new QTermWidget(this);
     
-    // Configure terminal
-    terminal->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(terminal, &QWidget::customContextMenuRequested, 
-            this, &TerminalWindow::showContextMenu);
-
-    terminal->setShellProgram("/bin/bash");
+    // Common settings for ALL terminals
+    terminal->setHistorySize(200000);  // 200k lines - unlimited-like experience
     terminal->setColorScheme("Linux");
     terminal->setTerminalFont(QFont("Monospace", 12));
     terminal->setScrollBarPosition(QTermWidget::ScrollBarRight);
     terminal->setMotionAfterPasting(2);
-
-    // Connect terminal finished signal
+    terminal->setContextMenuPolicy(Qt::CustomContextMenu);
+    
+    // Common signal connections
+    connect(terminal, &QWidget::customContextMenuRequested, 
+            this, &TerminalWindow::showContextMenu);
     connect(terminal, &QTermWidget::finished, this, &TerminalWindow::onTerminalFinished);
+    
+    return terminal;
+}
 
+// Updated createTerminal() method - for local terminals
+QTermWidget* TerminalWindow::createTerminal()
+{
+    QTermWidget *terminal = createTerminalWidget();  // Use helper method
+    
+    // Local terminal specific settings
+    terminal->setShellProgram("/bin/bash");
+    
     return terminal;
 }
 
 // Feature 4: Create SSH terminal with connection parameters and password support
 QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
 {
-    QTermWidget *terminal = new QTermWidget(this);
+    QTermWidget *terminal = createTerminalWidget();  // Use helper method
     
-    // Configure terminal
-    terminal->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(terminal, &QWidget::customContextMenuRequested, 
-            this, &TerminalWindow::showContextMenu);
-
-    // Set terminal properties
-    terminal->setColorScheme("Linux");
-    terminal->setTerminalFont(QFont("Monospace", 12));
-    terminal->setScrollBarPosition(QTermWidget::ScrollBarRight);
-    terminal->setMotionAfterPasting(2);
-
-    // Connect terminal finished signal
-    connect(terminal, &QTermWidget::finished, this, &TerminalWindow::onTerminalFinished);
-    
-    // Method: Start with bash and then execute SSH command
+    // SSH terminal specific setup
     terminal->setShellProgram("/bin/bash");
     terminal->startShellProgram();
     
@@ -324,7 +321,6 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     
     // Use a timer to send the SSH command after the terminal is ready
     QTimer::singleShot(200, terminal, [terminal, sshCommand, connection, this]() {
-        // Clear the terminal first
         terminal->sendText("clear\n");
         QTimer::singleShot(100, terminal, [terminal, sshCommand, connection, this]() {
             // Show what we're connecting to (single clean message)
@@ -395,7 +391,7 @@ void TerminalWindow::setupUI()
     setupConnectionTree();
 
     // Make connection tree narrower
-    connectionTree->setMaximumWidth(250);
+    connectionTree->setMaximumWidth(300);
     connectionTree->setMinimumWidth(100);
     
     splitter->addWidget(connectionTree);

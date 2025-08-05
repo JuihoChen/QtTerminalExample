@@ -90,6 +90,7 @@ private:
     void setupConnectionTree();
     void saveSettings();
     void loadSettings();
+    QTermWidget* createTerminalWidget();
     QTermWidget* createTerminal();
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
