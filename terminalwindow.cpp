@@ -382,43 +382,44 @@ void TerminalWindow::setupUI()
 {
     setWindowTitle("Advanced Qt Terminal with SSH Connections");
 
-    // Create central widget and main layout
     QWidget *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
     QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
     mainLayout->setContentsMargins(2, 2, 2, 2);
 
-    // Create splitter for tree and tabs
-    splitter = new QSplitter(Qt::Horizontal, this);
-    
+    // Use custom splitter with visible grip
+    splitter = new GripSplitter(Qt::Horizontal, this);
+
     // Setup connection tree
     setupConnectionTree();
+
+    // Make connection tree narrower
+    connectionTree->setMaximumWidth(250);
+    connectionTree->setMinimumWidth(100);
+    
     splitter->addWidget(connectionTree);
     
-    // Create tab widget (existing code)
+    // Create tab widget
     tabWidget = new QTabWidget(this);
     tabWidget->setTabsClosable(true);
     tabWidget->setMovable(true);
     tabWidget->setDocumentMode(true);
     
-    // Connect tab signals
     connect(tabWidget, &QTabWidget::tabCloseRequested, this, &TerminalWindow::closeTab);
     connect(tabWidget, &QTabWidget::currentChanged, this, &TerminalWindow::onTabChanged);
-
+    
     splitter->addWidget(tabWidget);
     
-    // Set splitter proportions (18% tree, 82% tabs)
-    splitter->setSizes({180, 820});
-    splitter->setCollapsible(0, false);  // Don't allow tree to be collapsed completely
+    // Use stretch factors for better proportion control
+    splitter->setStretchFactor(0, 1);   // Tree: small
+    splitter->setStretchFactor(1, 20);  // Terminal: large
+    splitter->setCollapsible(0, false);
     
     mainLayout->addWidget(splitter);
-
-    // Status bar
+    
     statusBar()->showMessage("Ready");
-
-    // Set initial size
-    resize(1400, 800);  // Slightly wider to accommodate tree
+    resize(1400, 800);
 }
 
 void TerminalWindow::setupMenus()
