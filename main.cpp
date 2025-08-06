@@ -15,6 +15,8 @@ int main(int argc, char *argv[])
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");
 
+    app.setWindowIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
+
     TerminalWindow window;
     window.show();
 
