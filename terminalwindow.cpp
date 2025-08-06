@@ -251,7 +251,31 @@ void TerminalWindow::onTerminalFinished()
     
     if (tabIndex == -1) return;
     
-    // If this is the last tab, quit the application directly without confirmation
+    // Check if this was an SSH terminal
+    bool isSSH = finishedTerminal->property("isSSHTerminal").toBool();
+    if (isSSH) {
+        // When SSH connection ends, the terminal returns to local shell
+        // Update the tab title to reflect it's now a local terminal
+        QString currentTitle = tabWidget->tabText(tabIndex);
+        
+        // Remove SSH-specific parts from title and make it a normal terminal title
+        QString newTitle = "Terminal";  // or extract base name if you prefer
+        tabWidget->setTabText(tabIndex, newTitle);
+        
+        // Mark as normal terminal now (the shell is still running locally)
+        finishedTerminal->setProperty("isSSHTerminal", false);
+        finishedTerminal->setProperty("sshConnection", QVariant());
+        
+        // Show message in status bar
+        statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
+        
+        // Don't return here - let the terminal continue running as local
+        // The terminal process itself hasn't finished, just the SSH connection
+        // So we don't want to close or recreate anything
+        return;
+    }
+    
+    // For local terminals that actually finished, continue with normal closure logic
     if (tabWidget->count() <= 1) {
         QApplication::quit();
         return;
@@ -300,66 +324,58 @@ QTermWidget* TerminalWindow::createTerminal()
 // Feature 4: Create SSH terminal with connection parameters and password support
 QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
 {
-    QTermWidget *terminal = createTerminalWidget();  // Use helper method
-    
+    QTermWidget *terminal = createTerminalWidget();
+
+    // Mark this as an SSH terminal
+    terminal->setProperty("isSSHTerminal", true);
+    terminal->setProperty("sshConnection", QVariant::fromValue(connection));
+
     // SSH terminal specific setup
     terminal->setShellProgram("/bin/bash");
     terminal->startShellProgram();
-    
-    // Build SSH command
+
+    // Build SSH command - keep it simple
     QString sshCommand;
-    if (connection.port == 22) {
-        sshCommand = QString("ssh %1@%2").arg(connection.username, connection.host);
-    } else {
-        sshCommand = QString("ssh %1@%2 -p %3").arg(connection.username, connection.host).arg(connection.port);
+    
+    // Use sshpass if password is provided
+    if (!connection.password.isEmpty()) {
+        sshCommand = QString("sshpass -p '%1' ").arg(connection.password);
     }
     
-    // Add SSH options for better experience and host key handling
-    sshCommand += " -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=10";
-    // Handle unknown hosts by adding them automatically (less secure but more convenient)
+    if (connection.port == 22) {
+        sshCommand += QString("ssh %1@%2").arg(connection.username, connection.host);
+    } else {
+        sshCommand += QString("ssh %1@%2 -p %3").arg(connection.username, connection.host).arg(connection.port);
+    }
+
+    // Add essential SSH options only
+    sshCommand += " -o ServerAliveInterval=60 -o ServerAliveCountMax=3";
     sshCommand += " -o StrictHostKeyChecking=accept-new";
-    
-    // Use a timer to send the SSH command after the terminal is ready
-    QTimer::singleShot(200, terminal, [terminal, sshCommand, connection, this]() {
-        terminal->sendText("clear\n");
-        QTimer::singleShot(100, terminal, [terminal, sshCommand, connection, this]() {
-            // Show what we're connecting to (single clean message)
-            terminal->sendText(QString("# Connecting to %1@%2:%3...\n")
-                             .arg(connection.username, connection.host)
-                             .arg(connection.port));
-            QTimer::singleShot(100, terminal, [terminal, sshCommand, connection, this]() {
-                // If password is provided, use sshpass for automatic password authentication
-                if (!connection.password.isEmpty()) {
-                    QString escapedPassword = connection.password;
-                    escapedPassword.replace("'", "'\"'\"'");
-                    QString sshpassCommand = QString("sshpass -p '%1' %2")
-                                           .arg(escapedPassword) // Escape single quotes
-                                           .arg(sshCommand);
-                    
-                    // Check if sshpass is available
-                    QProcess *checkProcess = new QProcess(this);
-                    checkProcess->start("which", QStringList() << "sshpass");
-                    checkProcess->waitForFinished(1000);
-                    
-                    if (checkProcess->exitCode() == 0) {
-                        // sshpass is available, use it
-                        terminal->sendText("# Using saved password...\n");
-                        terminal->sendText(sshpassCommand + "\n");
-                    } else {
-                        // sshpass not available, show warning and proceed with manual password entry
-                        terminal->sendText("# Warning: sshpass not found. You'll need to enter password manually.\n");
-                        terminal->sendText("# Install sshpass for automatic password authentication: sudo apt install sshpass\n");
-                        terminal->sendText(sshCommand + "\n");
-                    }
-                    checkProcess->deleteLater();
-                } else {
-                    // No password provided, proceed with key-based or manual authentication
-                    terminal->sendText(sshCommand + "\n");
+
+    // Monitor terminal output to detect when SSH connection ends
+    connect(terminal, &QTermWidget::receivedData, this, [this, terminal](const QString &text) {
+        if (text.contains("Connection to") && text.contains("closed.")) {
+            bool isSSH = terminal->property("isSSHTerminal").toBool();
+            if (isSSH) {
+                int tabIndex = tabWidget->indexOf(terminal);
+                if (tabIndex != -1) {
+                    tabWidget->setTabText(tabIndex, "Terminal");
+                    terminal->setProperty("isSSHTerminal", false);
+                    terminal->setProperty("sshConnection", QVariant());
+                    statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
                 }
-            });
+            }
+        }
+    });
+
+    // Wait for terminal to be ready and send command cleanly
+    QTimer::singleShot(300, [terminal, sshCommand]() {
+        terminal->sendText("clear\n");
+        QTimer::singleShot(100, [terminal, sshCommand]() {
+            terminal->sendText(sshCommand + "\n");
         });
     });
-    
+
     return terminal;
 }
 
