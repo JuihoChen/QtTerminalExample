@@ -1,4 +1,4 @@
-// ============ Updated terminalwindow.h with Password Field ============
+// ============ Updated terminalwindow.h with Split Left Pane ============
 #ifndef TERMINALWINDOW_H
 #define TERMINALWINDOW_H
 
@@ -6,6 +6,11 @@
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QSplitter>
+#include <QGroupBox>
+#include <QFormLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #include <qtermwidget.h>
 #include <QPainter>
 
@@ -73,6 +78,7 @@ private slots:
     
     // Connection tree slots
     void onConnectionDoubleClicked(QTreeWidgetItem *item, int column);
+    void onConnectionSelectionChanged();
     void showConnectionContextMenu(const QPoint &pos);
     
     // Feature 3: Connection management slots
@@ -83,11 +89,17 @@ private slots:
     
     // Feature 4: SSH connection slots
     void connectToSSH(QTreeWidgetItem *item);
+    
+    // Connection config panel slots
+    void onQuickConnectClicked();
+    void onEditConnectionClicked();
+    void onDeleteConnectionClicked();
 
 private:
     void setupUI();
     void setupMenus();
     void setupConnectionTree();
+    void setupConnectionConfigPanel();
     void saveSettings();
     void loadSettings();
     QTermWidget* createTerminalWidget();
@@ -109,14 +121,36 @@ private:
     QStringList getExistingFolders() const;
     QTreeWidgetItem* findConnectionItem(const SSHConnection &connection);
     bool connectionExists(const SSHConnection &connection, int excludeIndex = -1) const;
+    
+    // Connection config panel methods
+    void updateConnectionConfig(const SSHConnection &connection);
+    void clearConnectionConfig();
+    SSHConnection getCurrentSelectedConnection() const;
 
     QTabWidget *tabWidget;
     QTreeWidget *connectionTree;
-    QSplitter *splitter;
+    QSplitter *mainSplitter;        // Main horizontal splitter (left panel | terminal area)
+    QSplitter *leftPanelSplitter;   // Vertical splitter for left panel (tree | config)
     int tabCounter;
+    
+    // Connection config panel widgets
+    QGroupBox *connectionConfigGroup;
+    QLabel *configNameLabel;
+    QLabel *configHostLabel;
+    QLabel *configUsernameLabel;
+    QLabel *configPortLabel;
+    QLabel *configFolderLabel;
+    QLabel *configPasswordLabel;
+    QPushButton *quickConnectButton;
+    QPushButton *editConnectionButton;
+    QPushButton *deleteConnectionButton;
     
     // Store connections
     QList<SSHConnection> connections;
+    
+    // Current selected connection for config panel
+    SSHConnection selectedConnection;
+    bool hasSelectedConnection;
 };
 
 class GripSplitterHandle : public QSplitterHandle
@@ -124,7 +158,11 @@ class GripSplitterHandle : public QSplitterHandle
 public:
     GripSplitterHandle(Qt::Orientation orientation, QSplitter *parent)
         : QSplitterHandle(orientation, parent) {
-        setFixedWidth(6);
+        if (orientation == Qt::Horizontal) {
+            setFixedWidth(6);
+        } else {
+            setFixedHeight(8);
+        }
         // Enable mouse tracking to detect hover changes
         setMouseTracking(true);
     }
@@ -141,8 +179,13 @@ protected:
 
         // Draw borders
         painter.setPen(QColor(200, 200, 200));
-        painter.drawLine(0, 0, 0, height());
-        painter.drawLine(width()-1, 0, width()-1, height());
+        if (orientation() == Qt::Horizontal) {
+            painter.drawLine(0, 0, 0, height());
+            painter.drawLine(width()-1, 0, width()-1, height());
+        } else {
+            painter.drawLine(0, 0, width(), 0);
+            painter.drawLine(0, height()-1, width(), height()-1);
+        }
 
         // Draw grip dots - make them darker on hover
         painter.setPen(Qt::NoPen);
@@ -154,9 +197,18 @@ protected:
         int dotSize = 2;
         int spacing = 6;
 
-        for (int i = -2; i <= 2; i++) {
-            int y = centerY + (i * spacing);
-            painter.drawEllipse(centerX - dotSize/2, y - dotSize/2, dotSize, dotSize);
+        if (orientation() == Qt::Horizontal) {
+            // Vertical dots for horizontal splitter
+            for (int i = -2; i <= 2; i++) {
+                int y = centerY + (i * spacing);
+                painter.drawEllipse(centerX - dotSize/2, y - dotSize/2, dotSize, dotSize);
+            }
+        } else {
+            // Horizontal dots for vertical splitter
+            for (int i = -2; i <= 2; i++) {
+                int x = centerX + (i * spacing);
+                painter.drawEllipse(x - dotSize/2, centerY - dotSize/2, dotSize, dotSize);
+            }
         }
     }
 

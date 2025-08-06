@@ -1,4 +1,4 @@
-// ============ Updated terminalwindow.cpp with Password Support ============
+// ============ Updated terminalwindow.cpp with Split Left Pane ============
 #include "terminalwindow.h"
 #include "connectiondialog.h"
 
@@ -34,10 +34,13 @@
 #include <QInputDialog>
 #include <QTimer>
 #include <QProcess>
+#include <QGroupBox>
+#include <QFormLayout>
+#include <QPushButton>
 
 // Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
-    : QMainWindow(parent), tabWidget(nullptr), tabCounter(1)
+    : QMainWindow(parent), tabWidget(nullptr), tabCounter(1), hasSelectedConnection(false)
 {
     setupUI();
     setupMenus();
@@ -400,8 +403,11 @@ void TerminalWindow::setupUI()
     QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
     mainLayout->setContentsMargins(2, 2, 2, 2);
 
-    // Use custom splitter with visible grip
-    splitter = new GripSplitter(Qt::Horizontal, this);
+    // Main horizontal splitter (left panel | terminal area)
+    mainSplitter = new GripSplitter(Qt::Horizontal, this);
+
+    // Create left panel with vertical splitter (tree | config)
+    leftPanelSplitter = new GripSplitter(Qt::Vertical, this);
 
     // Setup connection tree
     setupConnectionTree();
@@ -409,8 +415,24 @@ void TerminalWindow::setupUI()
     // Make connection tree narrower
     connectionTree->setMaximumWidth(300);
     connectionTree->setMinimumWidth(100);
+
+    leftPanelSplitter->addWidget(connectionTree);
+
+    // Setup connection config panel
+    setupConnectionConfigPanel();
+    leftPanelSplitter->addWidget(connectionConfigGroup);
+
+    // Set left panel proportions (tree larger than config)
+    leftPanelSplitter->setStretchFactor(0, 3);  // Tree takes 75%
+    leftPanelSplitter->setStretchFactor(1, 1);  // Config takes 25%
+    leftPanelSplitter->setCollapsible(0, false);
+    leftPanelSplitter->setCollapsible(1, false);
+
+    // Make left panel narrower
+    leftPanelSplitter->setMaximumWidth(300);
+    leftPanelSplitter->setMinimumWidth(100);
     
-    splitter->addWidget(connectionTree);
+    mainSplitter->addWidget(leftPanelSplitter);
     
     // Create tab widget
     tabWidget = new QTabWidget(this);
@@ -421,14 +443,14 @@ void TerminalWindow::setupUI()
     connect(tabWidget, &QTabWidget::tabCloseRequested, this, &TerminalWindow::closeTab);
     connect(tabWidget, &QTabWidget::currentChanged, this, &TerminalWindow::onTabChanged);
     
-    splitter->addWidget(tabWidget);
+    mainSplitter->addWidget(tabWidget);
     
     // Use stretch factors for better proportion control
-    splitter->setStretchFactor(0, 1);   // Tree: small
-    splitter->setStretchFactor(1, 20);  // Terminal: large
-    splitter->setCollapsible(0, false);
+    mainSplitter->setStretchFactor(0, 1);   // Left panel: small
+    mainSplitter->setStretchFactor(1, 20);  // Terminal: large
+    mainSplitter->setCollapsible(0, false);
     
-    mainLayout->addWidget(splitter);
+    mainLayout->addWidget(mainSplitter);
     
     statusBar()->showMessage("Ready");
     resize(1400, 800);
@@ -488,8 +510,6 @@ void TerminalWindow::setupConnectionTree()
 {
     connectionTree = new QTreeWidget(this);
     connectionTree->setHeaderLabel("SSH Connections");
-    connectionTree->setMinimumWidth(200);
-    connectionTree->setMaximumWidth(400);
     
     // Enable context menu
     connectionTree->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -499,6 +519,189 @@ void TerminalWindow::setupConnectionTree()
     // Connect double-click signal
     connect(connectionTree, &QTreeWidget::itemDoubleClicked,
             this, &TerminalWindow::onConnectionDoubleClicked);
+    
+    // Connect selection changed signal
+    connect(connectionTree, &QTreeWidget::itemSelectionChanged,
+            this, &TerminalWindow::onConnectionSelectionChanged);
+}
+
+void TerminalWindow::setupConnectionConfigPanel()
+{
+    connectionConfigGroup = new QGroupBox("Connection Details", this);
+    connectionConfigGroup->setMaximumHeight(350);
+    
+    QFormLayout *formLayout = new QFormLayout(connectionConfigGroup);
+    
+    // Create read-only labels for connection details
+    configNameLabel = new QLabel("No connection selected", this);
+    configNameLabel->setStyleSheet("QLabel { color: #666; font-weight: bold; }");
+    formLayout->addRow("Name:", configNameLabel);
+    
+    configHostLabel = new QLabel("-", this);
+    configHostLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("Host:", configHostLabel);
+    
+    configUsernameLabel = new QLabel("-", this);
+    configUsernameLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("Username:", configUsernameLabel);
+    
+    configPortLabel = new QLabel("-", this);
+    configPortLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("Port:", configPortLabel);
+    
+    configPasswordLabel = new QLabel("-", this);
+    configPasswordLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("Password:", configPasswordLabel);
+    
+    configFolderLabel = new QLabel("-", this);
+    configFolderLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("Folder:", configFolderLabel);
+    
+    formLayout->addItem(new QSpacerItem(0, 10));
+    
+    // Action buttons
+    quickConnectButton = new QPushButton("🔌 Quick Connect", this);
+    quickConnectButton->setEnabled(false);
+    quickConnectButton->setStyleSheet("QPushButton { font-weight: bold; color: #0066cc; }");
+    connect(quickConnectButton, &QPushButton::clicked, this, &TerminalWindow::onQuickConnectClicked);
+    formLayout->addRow("", quickConnectButton);
+    
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    
+    editConnectionButton = new QPushButton("✏️ Edit", this);
+    editConnectionButton->setEnabled(false);
+    connect(editConnectionButton, &QPushButton::clicked, this, &TerminalWindow::onEditConnectionClicked);
+    buttonLayout->addWidget(editConnectionButton);
+    
+    deleteConnectionButton = new QPushButton("🗑️ Delete", this);
+    deleteConnectionButton->setEnabled(false);
+    deleteConnectionButton->setStyleSheet("QPushButton { color: #cc0000; }");
+    connect(deleteConnectionButton, &QPushButton::clicked, this, &TerminalWindow::onDeleteConnectionClicked);
+    buttonLayout->addWidget(deleteConnectionButton);
+    
+    formLayout->addRow("", buttonLayout);
+}
+
+void TerminalWindow::onConnectionSelectionChanged()
+{
+    QList<QTreeWidgetItem*> selectedItems = connectionTree->selectedItems();
+    
+    if (selectedItems.isEmpty()) {
+        clearConnectionConfig();
+        return;
+    }
+    
+    QTreeWidgetItem *item = selectedItems.first();
+    
+    // Check if this is a connection item (has connection data stored)
+    QVariant connectionData = item->data(0, Qt::UserRole);
+    if (!connectionData.canConvert<SSHConnection>()) {
+        clearConnectionConfig();
+        return; // This is a folder, not a connection
+    }
+    
+    SSHConnection connection = qvariant_cast<SSHConnection>(connectionData);
+    updateConnectionConfig(connection);
+}
+
+void TerminalWindow::updateConnectionConfig(const SSHConnection &connection)
+{
+    selectedConnection = connection;
+    hasSelectedConnection = true;
+    
+    configNameLabel->setText(connection.name);
+    configHostLabel->setText(connection.host);
+    configUsernameLabel->setText(connection.username);
+    configPortLabel->setText(QString::number(connection.port));
+    configFolderLabel->setText(connection.folder.isEmpty() ? "None" : connection.folder);
+    
+    // Show password status without revealing the actual password
+    if (connection.password.isEmpty()) {
+        configPasswordLabel->setText("Not set");
+        configPasswordLabel->setStyleSheet("QLabel { color: #999; font-style: italic; }");
+    } else {
+        configPasswordLabel->setText("••••••••");
+        configPasswordLabel->setStyleSheet("QLabel { color: #333; }");
+    }
+    
+    // Enable action buttons
+    quickConnectButton->setEnabled(true);
+    editConnectionButton->setEnabled(true);
+    deleteConnectionButton->setEnabled(true);
+}
+
+void TerminalWindow::clearConnectionConfig()
+{
+    hasSelectedConnection = false;
+    
+    configNameLabel->setText("No connection selected");
+    configHostLabel->setText("-");
+    configUsernameLabel->setText("-");
+    configPortLabel->setText("-");
+    configPasswordLabel->setText("-");
+    configFolderLabel->setText("-");
+    
+    // Reset password label style
+    configPasswordLabel->setStyleSheet("QLabel { color: #333; }");
+    
+    // Disable action buttons
+    quickConnectButton->setEnabled(false);
+    editConnectionButton->setEnabled(false);
+    deleteConnectionButton->setEnabled(false);
+}
+
+SSHConnection TerminalWindow::getCurrentSelectedConnection() const
+{
+    return selectedConnection;
+}
+
+void TerminalWindow::onQuickConnectClicked()
+{
+    if (!hasSelectedConnection) return;
+    
+    // Create SSH terminal with the selected connection
+    QTermWidget *terminal = createSSHTerminal(selectedConnection);
+    
+    // Create appropriate tab title
+    QString tabTitle = QString("SSH: %1").arg(selectedConnection.name);
+    
+    int index = tabWidget->addTab(terminal, tabTitle);
+    tabWidget->setCurrentIndex(index);
+    
+    // Focus the new terminal
+    terminal->setFocus();
+    updateStatusBar();
+    
+    // Show connection status in status bar
+    QString statusMessage = QString("Connecting to %1@%2:%3...")
+                           .arg(selectedConnection.username, selectedConnection.host)
+                           .arg(selectedConnection.port);
+    if (!selectedConnection.password.isEmpty()) {
+        statusMessage += " (using saved password)";
+    }
+    statusBar()->showMessage(statusMessage, 5000);
+}
+
+void TerminalWindow::onEditConnectionClicked()
+{
+    if (!hasSelectedConnection) return;
+    
+    // Find the corresponding tree item and edit it
+    QList<QTreeWidgetItem*> selectedItems = connectionTree->selectedItems();
+    if (!selectedItems.isEmpty()) {
+        editConnection(selectedItems.first());
+    }
+}
+
+void TerminalWindow::onDeleteConnectionClicked()
+{
+    if (!hasSelectedConnection) return;
+    
+    // Find the corresponding tree item and delete it
+    QList<QTreeWidgetItem*> selectedItems = connectionTree->selectedItems();
+    if (!selectedItems.isEmpty()) {
+        deleteConnection(selectedItems.first());
+    }
 }
 
 QString TerminalWindow::getConnectionsFilePath() const
@@ -618,6 +821,9 @@ void TerminalWindow::saveConnections()
 void TerminalWindow::refreshConnectionTree()
 {
     connectionTree->clear();
+    
+    // Clear selection and config panel
+    clearConnectionConfig();
     
     // Create folder map to organize connections
     QMap<QString, QTreeWidgetItem*> folders;
