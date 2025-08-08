@@ -732,6 +732,9 @@ void TerminalWindow::createDefaultConnections()
     
     // Save the default connections
     saveConnections();
+    
+    // ADD THIS LINE: Refresh the tree to show the default connections
+    refreshConnectionTree();
 }
 
 void TerminalWindow::loadConnections()
