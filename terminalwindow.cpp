@@ -14,6 +14,7 @@
 #include <QFont>
 #include <QFontDialog>
 #include <QColorDialog>
+#include <QFileDialog>
 #include <QSettings>
 #include <QCloseEvent>
 #include <QMessageBox>
@@ -37,6 +38,8 @@
 #include <QGroupBox>
 #include <QFormLayout>
 #include <QPushButton>
+#include <QTextEdit>
+#include <QListWidget>
 
 // Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
@@ -431,18 +434,23 @@ void TerminalWindow::setupUI()
     // Make left panel narrower
     leftPanelSplitter->setMaximumWidth(300);
     leftPanelSplitter->setMinimumWidth(100);
-    
+
     mainSplitter->addWidget(leftPanelSplitter);
-    
+
     // Create tab widget
     tabWidget = new QTabWidget(this);
     tabWidget->setTabsClosable(true);
     tabWidget->setMovable(true);
     tabWidget->setDocumentMode(true);
-    
+
     connect(tabWidget, &QTabWidget::tabCloseRequested, this, &TerminalWindow::closeTab);
     connect(tabWidget, &QTabWidget::currentChanged, this, &TerminalWindow::onTabChanged);
-    
+
+    // Enable context menu for tab bar
+    tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tabWidget->tabBar(), &QTabBar::customContextMenuRequested, 
+            this, &TerminalWindow::showTabContextMenu);
+
     mainSplitter->addWidget(tabWidget);
     
     // Use stretch factors for better proportion control
@@ -1192,6 +1200,638 @@ void TerminalWindow::showContextMenu(const QPoint &pos)
     menu.addAction("Change Color Scheme", this, &TerminalWindow::changeColorScheme);
 
     menu.exec(terminal->mapToGlobal(pos));
+}
+
+void TerminalWindow::showTabContextMenu(const QPoint &pos)
+{
+    int tabIndex = tabWidget->tabBar()->tabAt(pos);
+    if (tabIndex == -1) return;
+    
+    QTermWidget *terminal = qobject_cast<QTermWidget*>(tabWidget->widget(tabIndex));
+    if (!terminal) return;
+    
+    // Check if this is an SSH terminal
+    bool isSSH = terminal->property("isSSHTerminal").toBool();
+    
+    QMenu menu;
+    
+    // Standard tab operations
+    menu.addAction("📋 New Tab", this, &TerminalWindow::newTab);
+    menu.addAction("❌ Close Tab", [this, tabIndex]() { closeTab(tabIndex); });
+    menu.addSeparator();
+    
+    if (isSSH) {
+        // Get SSH connection details
+        QVariant connectionData = terminal->property("sshConnection");
+        if (connectionData.canConvert<SSHConnection>()) {
+            SSHConnection connection = qvariant_cast<SSHConnection>(connectionData);
+            
+            menu.addAction("📤 Upload File to Server...", [this, connection]() {
+                uploadFileToSSH(connection);
+            });
+            
+            menu.addAction("📥 Download File from Server...", [this, connection]() {
+                downloadFileFromSSH(connection);
+            });
+            
+            menu.addSeparator();
+            menu.addAction("📂 Browse Remote Files...", [this, connection]() {
+                browseRemoteFiles(connection);
+            });
+        }
+    }
+    
+    menu.addSeparator();
+    menu.addAction("🎨 Change Color Scheme", this, &TerminalWindow::changeColorScheme);
+    menu.addAction("🔤 Font...", this, &TerminalWindow::openFontDialog);
+    
+    menu.exec(tabWidget->tabBar()->mapToGlobal(pos));
+}
+
+void TerminalWindow::uploadFileToSSH(const SSHConnection &connection)
+{
+    // File selection dialog
+    QString localFile = QFileDialog::getOpenFileName(this, 
+        QString("Upload File to %1").arg(connection.name),
+        QDir::homePath(),
+        "All Files (*)");
+    
+    if (localFile.isEmpty()) return;
+    
+    // Show progress while detecting remote directory
+    QProgressDialog *detectDialog = new QProgressDialog("Detecting remote directory...", "Cancel", 0, 0, this);
+    detectDialog->setModal(true);
+    detectDialog->show();
+    
+    // Detect the actual current remote working directory
+    detectRemoteWorkingDirectory(connection, [this, connection, localFile, detectDialog](const QString &remotePath) {
+        detectDialog->hide();
+        detectDialog->deleteLater();
+        
+        // Build default remote file path
+        QString defaultRemotePath = remotePath;
+        if (!defaultRemotePath.endsWith("/")) {
+            defaultRemotePath += "/";
+        }
+        defaultRemotePath += QFileInfo(localFile).fileName();
+        
+        // Remote path dialog with actual remote directory info
+        bool ok;
+        QString dialogTitle = QString("Upload to %1").arg(connection.name);
+        QString dialogLabel = QString("Remote path (current directory: %1):")
+                             .arg(remotePath);
+        
+        QString finalRemotePath = QInputDialog::getText(this, dialogTitle, dialogLabel,
+            QLineEdit::Normal, defaultRemotePath, &ok);
+        
+        if (!ok || finalRemotePath.isEmpty()) return;
+        
+        // Perform SCP upload
+        performSCPUpload(connection, localFile, finalRemotePath);
+    });
+}
+
+void TerminalWindow::downloadFileFromSSH(const SSHConnection &connection)
+{
+    // First: Detect remote directory
+    QProgressDialog *detectDialog = new QProgressDialog("Detecting remote directory...", "Cancel", 0, 0, this);
+    detectDialog->setModal(true);
+    detectDialog->show();
+    
+    detectRemoteWorkingDirectory(connection, [this, connection, detectDialog](const QString &remotePath) {
+        detectDialog->hide();
+        detectDialog->deleteLater();
+        
+        // Second: Show file browser to select remote file
+        showRemoteFileBrowser(connection, remotePath, [this, connection](const QString &selectedRemoteFile) {
+            if (selectedRemoteFile.isEmpty()) return;
+            
+            // Third: Choose local save location
+            QString fileName = QFileInfo(selectedRemoteFile).fileName();
+            QString localFile = QFileDialog::getSaveFileName(this,
+                QString("Save '%1' from %2").arg(fileName, connection.name),
+                QDir::homePath() + "/" + fileName,
+                "All Files (*)");
+            
+            if (localFile.isEmpty()) return;
+            
+            // Fourth: Download the file
+            performSCPDownload(connection, selectedRemoteFile, localFile);
+        });
+    });
+}
+
+void TerminalWindow::performSCPUpload(const SSHConnection &connection, const QString &localFile, const QString &remotePath)
+{
+    // Create progress dialog
+    scpProgressDialog = new QProgressDialog("Uploading file...", "Cancel", 0, 0, this);
+    scpProgressDialog->setWindowTitle("SCP Upload");
+    scpProgressDialog->setModal(true);
+    scpProgressDialog->show();
+    
+    // Build SCP command
+    QString scpCommand;
+    if (!connection.password.isEmpty()) {
+        scpCommand = QString("sshpass -p '%1' ").arg(connection.password);
+    }
+    
+    if (connection.port == 22) {
+        scpCommand += QString("scp '%1' %2@%3:'%4'")
+                     .arg(localFile, connection.username, connection.host, remotePath);
+    } else {
+        scpCommand += QString("scp -P %1 '%2' %3@%4:'%5'")
+                     .arg(connection.port)
+                     .arg(localFile, connection.username, connection.host, remotePath);
+    }
+    
+    // Execute SCP in background process
+    QProcess *scpProcess = new QProcess(this);
+    
+    connect(scpProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            [this, scpProcess, connection, localFile](int exitCode, QProcess::ExitStatus exitStatus) {
+        Q_UNUSED(exitStatus)
+        scpProgressDialog->hide();
+        scpProgressDialog->deleteLater();
+        
+        if (exitCode == 0) {
+            statusBar()->showMessage(QString("✅ File uploaded successfully to %1").arg(connection.name), 5000);
+            QMessageBox::information(this, "Upload Complete", 
+                QString("File '%1' uploaded successfully to %2")
+                .arg(QFileInfo(localFile).fileName(), connection.name));
+        } else {
+            QString error = scpProcess->readAllStandardError();
+            statusBar()->showMessage("❌ Upload failed", 5000);
+            QMessageBox::warning(this, "Upload Failed", 
+                QString("Failed to upload file to %1:\n%2")
+                .arg(connection.name, error));
+        }
+        
+        scpProcess->deleteLater();
+    });
+    
+    connect(scpProgressDialog, &QProgressDialog::canceled, [scpProcess]() {
+        scpProcess->kill();
+    });
+    
+    scpProcess->start("/bin/bash", QStringList() << "-c" << scpCommand);
+}
+
+void TerminalWindow::performSCPDownload(const SSHConnection &connection, const QString &remoteFile, const QString &localFile)
+{
+    // Create progress dialog
+    scpProgressDialog = new QProgressDialog("Downloading file...", "Cancel", 0, 0, this);
+    scpProgressDialog->setWindowTitle("SCP Download");
+    scpProgressDialog->setModal(true);
+    scpProgressDialog->show();
+    
+    // Build SCP command
+    QString scpCommand;
+    if (!connection.password.isEmpty()) {
+        scpCommand = QString("sshpass -p '%1' ").arg(connection.password);
+    }
+    
+    if (connection.port == 22) {
+        scpCommand += QString("scp %1@%2:'%3' '%4'")
+                     .arg(connection.username, connection.host, remoteFile, localFile);
+    } else {
+        scpCommand += QString("scp -P %1 %2@%3:'%4' '%5'")
+                     .arg(connection.port)
+                     .arg(connection.username, connection.host, remoteFile, localFile);
+    }
+    
+    // Execute SCP in background process
+    QProcess *scpProcess = new QProcess(this);
+    
+    connect(scpProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            [this, scpProcess, connection, remoteFile](int exitCode, QProcess::ExitStatus exitStatus) {
+        Q_UNUSED(exitStatus)
+        scpProgressDialog->hide();
+        scpProgressDialog->deleteLater();
+        
+        if (exitCode == 0) {
+            statusBar()->showMessage(QString("✅ File downloaded successfully from %1").arg(connection.name), 5000);
+            QMessageBox::information(this, "Download Complete", 
+                QString("File '%1' downloaded successfully from %2")
+                .arg(QFileInfo(remoteFile).fileName(), connection.name));
+        } else {
+            QString error = scpProcess->readAllStandardError();
+            statusBar()->showMessage("❌ Download failed", 5000);
+            QMessageBox::warning(this, "Download Failed", 
+                QString("Failed to download file from %1:\n%2")
+                .arg(connection.name, error));
+        }
+        
+        scpProcess->deleteLater();
+    });
+    
+    connect(scpProgressDialog, &QProgressDialog::canceled, [scpProcess]() {
+        scpProcess->kill();
+    });
+    
+    scpProcess->start("/bin/bash", QStringList() << "-c" << scpCommand);
+}
+
+void TerminalWindow::browseRemoteFiles(const SSHConnection &connection)
+{
+    // Show progress while detecting remote directory
+    QProgressDialog *detectDialog = new QProgressDialog("Detecting remote directory...", "Cancel", 0, 0, this);
+    detectDialog->setModal(true);
+    detectDialog->show();
+    
+    // Detect the actual current remote working directory
+    detectRemoteWorkingDirectory(connection, [this, connection, detectDialog](const QString &remotePath) {
+        detectDialog->hide();
+        detectDialog->deleteLater();
+        
+        // Directory browser dialog with actual current directory
+        bool ok;
+        QString dialogTitle = QString("Browse Remote Directory on %1").arg(connection.name);
+        QString dialogLabel = QString("Directory path (current: %1):").arg(remotePath);
+        
+        QString browsePath = QInputDialog::getText(this, dialogTitle, dialogLabel,
+            QLineEdit::Normal, remotePath, &ok);
+        
+        if (!ok || browsePath.isEmpty()) return;
+        
+        // Build SSH ls command
+        QString lsCommand;
+        if (!connection.password.isEmpty()) {
+            lsCommand = QString("sshpass -p '%1' ").arg(connection.password);
+        }
+        
+        if (connection.port == 22) {
+            lsCommand += QString("ssh %1@%2 'ls -la \"%3\"'")
+                        .arg(connection.username, connection.host, browsePath);
+        } else {
+            lsCommand += QString("ssh -p %1 %2@%3 'ls -la \"%4\"'")
+                        .arg(connection.port)
+                        .arg(connection.username, connection.host, browsePath);
+        }
+        
+        // Execute and show results
+        QProcess *lsProcess = new QProcess(this);
+        connect(lsProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+                [this, lsProcess, connection, browsePath](int exitCode, QProcess::ExitStatus exitStatus) {
+            Q_UNUSED(exitStatus)
+            if (exitCode == 0) {
+                QString output = lsProcess->readAllStandardOutput();
+                
+                // Create a simple dialog to show file listing
+                QDialog dialog(this);
+                dialog.setWindowTitle(QString("Remote Files: %1:%2").arg(connection.host, browsePath));
+                dialog.resize(600, 400);
+                
+                QVBoxLayout *layout = new QVBoxLayout(&dialog);
+                QTextEdit *textEdit = new QTextEdit(&dialog);
+                textEdit->setReadOnly(true);
+                textEdit->setFont(QFont("Monospace", 10));
+                textEdit->setPlainText(output);
+                layout->addWidget(textEdit);
+                
+                QPushButton *closeBtn = new QPushButton("Close", &dialog);
+                connect(closeBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+                layout->addWidget(closeBtn);
+                
+                dialog.exec();
+            } else {
+                QString error = lsProcess->readAllStandardError();
+                QMessageBox::warning(this, "Browse Failed", 
+                    QString("Failed to browse directory on %1:\n%2")
+                    .arg(connection.name, error));
+            }
+            lsProcess->deleteLater();
+        });
+        
+        lsProcess->start("/bin/bash", QStringList() << "-c" << lsCommand);
+    });
+}
+
+QString TerminalWindow::getDefaultRemotePath(const SSHConnection &connection)
+{
+    // Always use the user's home directory as default, not the organizational folder
+    return QString("/home/%1").arg(connection.username);
+}
+
+// Add this new method to detect the actual current remote directory
+void TerminalWindow::detectRemoteWorkingDirectory(const SSHConnection &connection, 
+                                                std::function<void(const QString&)> callback)
+{
+    // Build SSH pwd command to get current working directory
+    QString pwdCommand;
+    if (!connection.password.isEmpty()) {
+        pwdCommand = QString("sshpass -p '%1' ").arg(connection.password);
+    }
+    
+    if (connection.port == 22) {
+        pwdCommand += QString("ssh %1@%2 'pwd'")
+                     .arg(connection.username, connection.host);
+    } else {
+        pwdCommand += QString("ssh -p %1 %2@%3 'pwd'")
+                     .arg(connection.port)
+                     .arg(connection.username, connection.host);
+    }
+    
+    // Execute command to get current directory
+    QProcess *pwdProcess = new QProcess(this);
+    connect(pwdProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            [this, pwdProcess, connection, callback](int exitCode, QProcess::ExitStatus exitStatus) {
+        Q_UNUSED(exitStatus)
+        
+        QString remotePath;
+        if (exitCode == 0) {
+            // Successfully got the remote directory
+            remotePath = pwdProcess->readAllStandardOutput().trimmed();
+            if (remotePath.isEmpty()) {
+                remotePath = getDefaultRemotePath(connection);
+            }
+        } else {
+            // Fallback to default if command failed
+            remotePath = getDefaultRemotePath(connection);
+        }
+        
+        callback(remotePath);
+        pwdProcess->deleteLater();
+    });
+    
+    pwdProcess->start("/bin/bash", QStringList() << "-c" << pwdCommand);
+}
+
+// Alternative approach: Track terminal working directories
+// Add this method to track the current directory of active SSH terminals
+QString TerminalWindow::getCurrentRemoteDirectory(QTermWidget *terminal)
+{
+    if (!terminal) return QString();
+    
+    // Check if this is an SSH terminal
+    bool isSSH = terminal->property("isSSHTerminal").toBool();
+    if (!isSSH) return QString();
+    
+    // Get the connection info
+    QVariant connectionData = terminal->property("sshConnection");
+    if (!connectionData.canConvert<SSHConnection>()) return QString();
+    
+    SSHConnection connection = qvariant_cast<SSHConnection>(connectionData);
+    
+    // For now, return default path - you could enhance this by:
+    // 1. Parsing terminal output to track 'cd' commands
+    // 2. Sending 'pwd' command and capturing output
+    // 3. Using a more sophisticated terminal state tracking
+    
+    return getDefaultRemotePath(connection);
+}
+
+// Add this new method to show a proper remote file browser with file selection
+void TerminalWindow::showRemoteFileBrowser(const SSHConnection &connection, const QString &remotePath, 
+                                          std::function<void(const QString&)> callback)
+{
+    // Build SSH ls command to get file listing
+    QString lsCommand;
+    if (!connection.password.isEmpty()) {
+        lsCommand = QString("sshpass -p '%1' ").arg(connection.password);
+    }
+    
+    if (connection.port == 22) {
+        lsCommand += QString("ssh %1@%2 'ls -la \"%3\"'")
+                    .arg(connection.username, connection.host, remotePath);
+    } else {
+        lsCommand += QString("ssh -p %1 %2@%3 'ls -la \"%4\"'")
+                    .arg(connection.port)
+                    .arg(connection.username, connection.host, remotePath);
+    }
+    
+    // Create progress dialog for file listing
+    QProgressDialog *listDialog = new QProgressDialog("Loading remote files...", "Cancel", 0, 0, this);
+    listDialog->setModal(true);
+    listDialog->show();
+    
+    // Execute command to get file listing
+    QProcess *lsProcess = new QProcess(this);
+    connect(lsProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            [this, lsProcess, connection, remotePath, callback, listDialog](int exitCode, QProcess::ExitStatus exitStatus) {
+        Q_UNUSED(exitStatus)
+        
+        listDialog->hide();
+        listDialog->deleteLater();
+        
+        if (exitCode != 0) {
+            QString error = lsProcess->readAllStandardError();
+            QMessageBox::warning(this, "Browse Failed", 
+                QString("Failed to browse directory on %1:\n%2")
+                .arg(connection.name, error));
+            callback(QString());
+            lsProcess->deleteLater();
+            return;
+        }
+        
+        QString output = lsProcess->readAllStandardOutput();
+        
+        // Parse the ls output to create a file selection dialog
+        QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+        QStringList files;
+        QStringList fileDetails;
+        
+        // Skip the first line if it shows total
+        int startIndex = (lines.size() > 0 && lines[0].startsWith("total")) ? 1 : 0;
+        
+        for (int i = startIndex; i < lines.size(); ++i) {
+            QString line = lines[i].trimmed();
+            if (line.isEmpty()) continue;
+            
+            // Parse ls -la output: permissions user group size date time filename
+            QStringList parts = line.split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+            if (parts.size() < 9) continue;
+            
+            QString permissions = parts[0];
+            QString filename = parts.mid(8).join(" "); // Handle filenames with spaces
+            
+            // Skip . and .. entries
+            if (filename == "." || filename == "..") continue;
+            
+            QString fullPath = remotePath;
+            if (!fullPath.endsWith("/")) fullPath += "/";
+            fullPath += filename;
+            
+            // For directories, ensure the path ends with /
+            if (permissions.startsWith('d')) {
+                if (!fullPath.endsWith("/")) fullPath += "/";
+            }
+            
+            files.append(fullPath);
+            
+            // Create display text with file info
+            QString displayText;
+            if (permissions.startsWith('d')) {
+                displayText = QString("📁 %1/").arg(filename);
+            } else if (permissions.contains('x')) {
+                displayText = QString("⚙️ %1").arg(filename);
+            } else {
+                displayText = QString("📄 %1").arg(filename);
+            }
+            
+            // Add size info for files
+            if (!permissions.startsWith('d') && parts.size() >= 5) {
+                displayText += QString(" (%1)").arg(parts[4]);
+            }
+            
+            fileDetails.append(displayText);
+        }
+        
+        if (files.isEmpty()) {
+            QMessageBox::information(this, "Empty Directory", 
+                QString("No files found in %1").arg(remotePath));
+            callback(QString());
+            lsProcess->deleteLater();
+            return;
+        }
+        
+        // Create file selection dialog
+        QDialog fileDialog(this);
+        fileDialog.setWindowTitle(QString("Select File from %1:%2").arg(connection.host, remotePath));
+        fileDialog.resize(600, 400);
+        
+        QVBoxLayout *layout = new QVBoxLayout(&fileDialog);
+        
+        // Add path label
+        QLabel *pathLabel = new QLabel(QString("Remote path: %1").arg(remotePath), &fileDialog);
+        pathLabel->setStyleSheet("QLabel { font-weight: bold; color: #666; }");
+        layout->addWidget(pathLabel);
+        
+        // File list
+        QListWidget *fileList = new QListWidget(&fileDialog);
+        for (int i = 0; i < files.size(); ++i) {
+            QListWidgetItem *item = new QListWidgetItem(fileDetails[i]);
+            item->setData(Qt::UserRole, files[i]); // Store full path
+            fileList->addItem(item);
+        }
+        layout->addWidget(fileList);
+        
+        // Manual path entry
+        QHBoxLayout *pathLayout = new QHBoxLayout();
+        pathLayout->addWidget(new QLabel("Or enter file path:", &fileDialog));
+        QLineEdit *pathEdit = new QLineEdit(&fileDialog);
+        pathEdit->setPlaceholderText("Enter full remote file path...");
+        pathLayout->addWidget(pathEdit);
+        layout->addLayout(pathLayout);
+        
+        // Buttons
+        QHBoxLayout *buttonLayout = new QHBoxLayout();
+        QPushButton *selectBtn = new QPushButton("Download Selected", &fileDialog);
+        QPushButton *enterBtn = new QPushButton("Enter Directory", &fileDialog);
+        QPushButton *upBtn = new QPushButton("📁 Up", &fileDialog);
+        QPushButton *manualBtn = new QPushButton("Manual Path", &fileDialog);
+        QPushButton *cancelBtn = new QPushButton("Cancel", &fileDialog);
+        
+        selectBtn->setEnabled(false);
+        enterBtn->setEnabled(false);
+        selectBtn->setStyleSheet("QPushButton { font-weight: bold; color: #0066cc; }");
+        
+        buttonLayout->addWidget(selectBtn);
+        buttonLayout->addWidget(enterBtn);
+        buttonLayout->addWidget(upBtn);
+        buttonLayout->addWidget(manualBtn);
+        buttonLayout->addStretch();
+        buttonLayout->addWidget(cancelBtn);
+        layout->addLayout(buttonLayout);
+        
+        // Connect signals
+        connect(fileList, &QListWidget::itemSelectionChanged, [selectBtn, enterBtn, fileList]() {
+            QListWidgetItem *current = fileList->currentItem();
+            selectBtn->setEnabled(current != nullptr);
+            
+            if (current) {
+                QString selectedPath = current->data(Qt::UserRole).toString();
+                enterBtn->setEnabled(selectedPath.endsWith("/"));
+            } else {
+                enterBtn->setEnabled(false);
+            }
+        });
+        
+        connect(fileList, &QListWidget::itemDoubleClicked, [this, &fileDialog, callback, connection](QListWidgetItem *item) {
+            QString selectedPath = item->data(Qt::UserRole).toString();
+            
+            // If it's a directory, navigate into it
+            if (selectedPath.endsWith("/")) {
+                fileDialog.accept(); // Close current dialog
+                // Recursively open browser in the new directory
+                showRemoteFileBrowser(connection, selectedPath, callback);
+                return;
+            }
+            
+            // If it's a file, select it for download
+            callback(selectedPath);
+            fileDialog.accept();
+        });
+        
+        connect(selectBtn, &QPushButton::clicked, [&fileDialog, fileList, callback]() {
+            QListWidgetItem *currentItem = fileList->currentItem();
+            if (!currentItem) return;
+            
+            QString selectedFile = currentItem->data(Qt::UserRole).toString();
+            
+            // Check if it's a directory
+            if (selectedFile.endsWith("/")) {
+                QMessageBox::information(&fileDialog, "Directory Selected", 
+                    "Cannot download a directory. Use 'Enter Directory' to browse or select a file.");
+                return;
+            }
+            
+            callback(selectedFile);
+            fileDialog.accept();
+        });
+        
+        connect(enterBtn, &QPushButton::clicked, [this, &fileDialog, fileList, callback, connection]() {
+            QListWidgetItem *currentItem = fileList->currentItem();
+            if (!currentItem) return;
+            
+            QString selectedDir = currentItem->data(Qt::UserRole).toString();
+            if (!selectedDir.endsWith("/")) return;
+            
+            fileDialog.accept(); // Close current dialog
+            showRemoteFileBrowser(connection, selectedDir, callback); // Open new browser in directory
+        });
+        
+        connect(upBtn, &QPushButton::clicked, [this, &fileDialog, callback, connection, remotePath]() {
+            // Go up one directory
+            QString parentPath = remotePath;
+            if (parentPath.endsWith("/")) parentPath.chop(1);
+            
+            int lastSlash = parentPath.lastIndexOf('/');
+            if (lastSlash > 0) {
+                parentPath = parentPath.left(lastSlash + 1);
+            } else {
+                parentPath = "/";
+            }
+            
+            fileDialog.accept();
+            showRemoteFileBrowser(connection, parentPath, callback);
+        });
+        
+        connect(manualBtn, &QPushButton::clicked, [&fileDialog, pathEdit, callback]() {
+            QString manualPath = pathEdit->text().trimmed();
+            if (manualPath.isEmpty()) {
+                QMessageBox::information(&fileDialog, "Empty Path", "Please enter a file path.");
+                return;
+            }
+            
+            callback(manualPath);
+            fileDialog.accept();
+        });
+        
+        connect(cancelBtn, &QPushButton::clicked, [&fileDialog, callback]() {
+            callback(QString());
+            fileDialog.reject();
+        });
+        
+        fileDialog.exec();
+        lsProcess->deleteLater();
+    });
+    
+    connect(listDialog, &QProgressDialog::canceled, [lsProcess, callback]() {
+        lsProcess->kill();
+        callback(QString());
+    });
+    
+    lsProcess->start("/bin/bash", QStringList() << "-c" << lsCommand);
 }
 
 void TerminalWindow::saveSettings()
