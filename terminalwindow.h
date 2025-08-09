@@ -14,6 +14,8 @@
 #include <qtermwidget.h>
 #include <QPainter>
 #include <QProgressDialog>
+#include <QProcess>
+#include <QUuid>
 
 QT_BEGIN_NAMESPACE
 class QVBoxLayout;
@@ -250,6 +252,157 @@ public:
 protected:
     QSplitterHandle *createHandle() override {
         return new GripSplitterHandle(orientation(), this);
+    }
+};
+
+// Suggested improvements for your terminal application
+
+// 1. Password Encryption Helper (add to header)
+class PasswordManager {
+public:
+    static QString encryptPassword(const QString &plainText);
+    static QString decryptPassword(const QString &encrypted);
+private:
+    static const QString ENCRYPTION_KEY;
+};
+
+// 2. Command Safety Helper
+class CommandSafetyHelper {
+public:
+    // Safely escape arguments for shell commands - Qt version compatible
+    static QString escapeShellArgument(const QString &argument) {
+        if (argument.isEmpty()) {
+            return "''";
+        }
+        
+        // Check if argument needs quoting
+        bool needsQuoting = false;
+        static const QString specialChars = " \t\n\r\"'`$\\|&;<>(){}[]?*~#";
+        
+        for (const QChar &ch : argument) {
+            if (specialChars.contains(ch)) {
+                needsQuoting = true;
+                break;
+            }
+        }
+        
+        if (!needsQuoting) {
+            return argument;
+        }
+        
+        // Escape single quotes and wrap in single quotes
+        QString escaped = argument;
+        escaped.replace("'", "'\"'\"'");
+        return "'" + escaped + "'";
+    }
+    
+    // Build safe SSH command
+    static QString buildSafeSSHCommand(const SSHConnection &connection, 
+                                      const QString &remoteCommand = QString()) {
+        QString cmd;
+        
+        if (!connection.password.isEmpty()) {
+            cmd = QString("sshpass -p %1 ").arg(escapeShellArgument(connection.password));
+        }
+        
+        cmd += QString("ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
+                      "-o StrictHostKeyChecking=accept-new ");
+        
+        if (connection.port != 22) {
+            cmd += QString("-p %1 ").arg(connection.port);
+        }
+        
+        cmd += QString("%1@%2").arg(
+            escapeShellArgument(connection.username),
+            escapeShellArgument(connection.host)
+        );
+        
+        if (!remoteCommand.isEmpty()) {
+            cmd += QString(" %1").arg(escapeShellArgument(remoteCommand));
+        }
+        
+        return cmd;
+    }
+};
+
+// 3. Enhanced Error Handling for SSH Operations
+class SSHErrorHandler {
+public:
+    enum ErrorType {
+        Success = 0,
+        GeneralError = 1,
+        AuthenticationFailed = 255,
+        ConnectionRefused = 61,
+        HostUnreachable = 113,
+        TimeoutError = 124
+    };
+    
+    static QString getErrorDescription(int exitCode) {
+        switch (exitCode) {
+        case Success:
+            return "Operation completed successfully";
+        case AuthenticationFailed:
+            return "Authentication failed - check username/password";
+        case ConnectionRefused:
+            return "Connection refused - check host and port";
+        case HostUnreachable:
+            return "Host unreachable - check network connection";
+        case TimeoutError:
+            return "Operation timed out";
+        default:
+            return QString("Unknown error (code: %1)").arg(exitCode);
+        }
+    }
+};
+
+// 4. Configuration Validation
+class ConnectionValidator {
+public:
+    struct ValidationResult {
+        bool isValid;
+        QString errorMessage;
+        QStringList warnings;
+    };
+    
+    static ValidationResult validateConnection(const SSHConnection &connection) {
+        ValidationResult result;
+        result.isValid = true;
+        
+        // Basic validation
+        if (connection.name.trimmed().isEmpty()) {
+            result.isValid = false;
+            result.errorMessage = "Connection name cannot be empty";
+            return result;
+        }
+        
+        if (connection.host.trimmed().isEmpty()) {
+            result.isValid = false;
+            result.errorMessage = "Host cannot be empty";
+            return result;
+        }
+        
+        if (connection.username.trimmed().isEmpty()) {
+            result.isValid = false;
+            result.errorMessage = "Username cannot be empty";
+            return result;
+        }
+        
+        if (connection.port < 1 || connection.port > 65535) {
+            result.isValid = false;
+            result.errorMessage = "Port must be between 1 and 65535";
+            return result;
+        }
+        
+        // Warnings for common issues
+        if (connection.password.isEmpty()) {
+            result.warnings.append("No password set - you'll need to enter it manually");
+        }
+        
+        if (connection.port != 22) {
+            result.warnings.append(QString("Using non-standard SSH port: %1").arg(connection.port));
+        }
+        
+        return result;
     }
 };
 

@@ -340,23 +340,8 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     terminal->setShellProgram("/bin/bash");
     terminal->startShellProgram();
 
-    // Build SSH command - keep it simple
-    QString sshCommand;
-    
-    // Use sshpass if password is provided
-    if (!connection.password.isEmpty()) {
-        sshCommand = QString("sshpass -p '%1' ").arg(connection.password);
-    }
-    
-    if (connection.port == 22) {
-        sshCommand += QString("ssh %1@%2").arg(connection.username, connection.host);
-    } else {
-        sshCommand += QString("ssh %1@%2 -p %3").arg(connection.username, connection.host).arg(connection.port);
-    }
-
-    // Add essential SSH options only
-    sshCommand += " -o ServerAliveInterval=60 -o ServerAliveCountMax=3";
-    sshCommand += " -o StrictHostKeyChecking=accept-new";
+    // Build safe SSH command using the helper
+    QString sshCommand = CommandSafetyHelper::buildSafeSSHCommand(connection);
 
     // Monitor terminal output to detect when SSH connection ends
     connect(terminal, &QTermWidget::receivedData, this, [this, terminal](const QString &text) {
@@ -1321,30 +1306,56 @@ void TerminalWindow::downloadFileFromSSH(const SSHConnection &connection)
     });
 }
 
-void TerminalWindow::performSCPUpload(const SSHConnection &connection, const QString &localFile, const QString &remotePath)
+void TerminalWindow::performSCPUpload(const SSHConnection &connection, 
+                                     const QString &localFile, 
+                                     const QString &remotePath)
 {
+    // Validate connection first
+    auto validation = ConnectionValidator::validateConnection(connection);
+    if (!validation.isValid) {
+        QMessageBox::warning(this, "Invalid Connection", validation.errorMessage);
+        return;
+    }
+    
+    // Show warnings if any
+    if (!validation.warnings.isEmpty()) {
+        QString warningText = "Warnings:\n" + validation.warnings.join("\n");
+        int ret = QMessageBox::question(this, "Connection Warnings", 
+                                       warningText + "\n\nContinue anyway?",
+                                       QMessageBox::Yes | QMessageBox::No);
+        if (ret == QMessageBox::No) return;
+    }
+    
     // Create progress dialog
     scpProgressDialog = new QProgressDialog("Uploading file...", "Cancel", 0, 0, this);
     scpProgressDialog->setWindowTitle("SCP Upload");
     scpProgressDialog->setModal(true);
     scpProgressDialog->show();
-    
-    // Build SCP command
+
+    // Build safe SCP command for UPLOAD
     QString scpCommand;
     if (!connection.password.isEmpty()) {
-        scpCommand = QString("sshpass -p '%1' ").arg(connection.password);
+        scpCommand = QString("sshpass -p %1 ").arg(CommandSafetyHelper::escapeShellArgument(connection.password));
     }
-    
+
     if (connection.port == 22) {
-        scpCommand += QString("scp '%1' %2@%3:'%4'")
-                     .arg(localFile, connection.username, connection.host, remotePath);
+        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
+                             "-o StrictHostKeyChecking=accept-new %1 %2@%3:%4")
+                     .arg(CommandSafetyHelper::escapeShellArgument(localFile),
+                          CommandSafetyHelper::escapeShellArgument(connection.username),
+                          CommandSafetyHelper::escapeShellArgument(connection.host),
+                          CommandSafetyHelper::escapeShellArgument(remotePath));
     } else {
-        scpCommand += QString("scp -P %1 '%2' %3@%4:'%5'")
+        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
+                             "-o StrictHostKeyChecking=accept-new -P %1 %2 %3@%4:%5")
                      .arg(connection.port)
-                     .arg(localFile, connection.username, connection.host, remotePath);
+                     .arg(CommandSafetyHelper::escapeShellArgument(localFile),
+                          CommandSafetyHelper::escapeShellArgument(connection.username),
+                          CommandSafetyHelper::escapeShellArgument(connection.host),
+                          CommandSafetyHelper::escapeShellArgument(remotePath));
     }
     
-    // Execute SCP in background process
+    // Execute with improved error handling
     QProcess *scpProcess = new QProcess(this);
     
     connect(scpProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
@@ -1360,10 +1371,11 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection, const QSt
                 .arg(QFileInfo(localFile).fileName(), connection.name));
         } else {
             QString error = scpProcess->readAllStandardError();
+            QString friendlyError = SSHErrorHandler::getErrorDescription(exitCode);
             statusBar()->showMessage("❌ Upload failed", 5000);
             QMessageBox::warning(this, "Upload Failed", 
-                QString("Failed to upload file to %1:\n%2")
-                .arg(connection.name, error));
+                QString("Failed to upload file to %1:\n%2\n\nTechnical details:\n%3")
+                .arg(connection.name, friendlyError, error));
         }
         
         scpProcess->deleteLater();
@@ -1378,28 +1390,52 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection, const QSt
 
 void TerminalWindow::performSCPDownload(const SSHConnection &connection, const QString &remoteFile, const QString &localFile)
 {
+    // Validate connection first
+    auto validation = ConnectionValidator::validateConnection(connection);
+    if (!validation.isValid) {
+        QMessageBox::warning(this, "Invalid Connection", validation.errorMessage);
+        return;
+    }
+    
+    // Show warnings if any
+    if (!validation.warnings.isEmpty()) {
+        QString warningText = "Warnings:\n" + validation.warnings.join("\n");
+        int ret = QMessageBox::question(this, "Connection Warnings", 
+                                       warningText + "\n\nContinue anyway?",
+                                       QMessageBox::Yes | QMessageBox::No);
+        if (ret == QMessageBox::No) return;
+    }
+
     // Create progress dialog
     scpProgressDialog = new QProgressDialog("Downloading file...", "Cancel", 0, 0, this);
     scpProgressDialog->setWindowTitle("SCP Download");
     scpProgressDialog->setModal(true);
     scpProgressDialog->show();
     
-    // Build SCP command
+    // Build safe SCP command for DOWNLOAD
     QString scpCommand;
     if (!connection.password.isEmpty()) {
-        scpCommand = QString("sshpass -p '%1' ").arg(connection.password);
+        scpCommand = QString("sshpass -p %1 ").arg(CommandSafetyHelper::escapeShellArgument(connection.password));
     }
-    
+
     if (connection.port == 22) {
-        scpCommand += QString("scp %1@%2:'%3' '%4'")
-                     .arg(connection.username, connection.host, remoteFile, localFile);
+        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
+                             "-o StrictHostKeyChecking=accept-new %1@%2:%3 %4")
+                     .arg(CommandSafetyHelper::escapeShellArgument(connection.username),
+                          CommandSafetyHelper::escapeShellArgument(connection.host),
+                          CommandSafetyHelper::escapeShellArgument(remoteFile),
+                          CommandSafetyHelper::escapeShellArgument(localFile));
     } else {
-        scpCommand += QString("scp -P %1 %2@%3:'%4' '%5'")
+        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
+                             "-o StrictHostKeyChecking=accept-new -P %1 %2@%3:%4 %5")
                      .arg(connection.port)
-                     .arg(connection.username, connection.host, remoteFile, localFile);
+                     .arg(CommandSafetyHelper::escapeShellArgument(connection.username),
+                          CommandSafetyHelper::escapeShellArgument(connection.host),
+                          CommandSafetyHelper::escapeShellArgument(remoteFile),
+                          CommandSafetyHelper::escapeShellArgument(localFile));
     }
-    
-    // Execute SCP in background process
+
+    // Execute with improved error handling
     QProcess *scpProcess = new QProcess(this);
     
     connect(scpProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
@@ -1415,10 +1451,11 @@ void TerminalWindow::performSCPDownload(const SSHConnection &connection, const Q
                 .arg(QFileInfo(remoteFile).fileName(), connection.name));
         } else {
             QString error = scpProcess->readAllStandardError();
+            QString friendlyError = SSHErrorHandler::getErrorDescription(exitCode);
             statusBar()->showMessage("❌ Download failed", 5000);
             QMessageBox::warning(this, "Download Failed", 
-                QString("Failed to download file from %1:\n%2")
-                .arg(connection.name, error));
+                QString("Failed to download file from %1:\n%2\n\nTechnical details:\n%3")
+                .arg(connection.name, friendlyError, error));
         }
         
         scpProcess->deleteLater();
@@ -1516,20 +1553,8 @@ QString TerminalWindow::getDefaultRemotePath(const SSHConnection &connection)
 void TerminalWindow::detectRemoteWorkingDirectory(const SSHConnection &connection, 
                                                 std::function<void(const QString&)> callback)
 {
-    // Build SSH pwd command to get current working directory
-    QString pwdCommand;
-    if (!connection.password.isEmpty()) {
-        pwdCommand = QString("sshpass -p '%1' ").arg(connection.password);
-    }
-    
-    if (connection.port == 22) {
-        pwdCommand += QString("ssh %1@%2 'pwd'")
-                     .arg(connection.username, connection.host);
-    } else {
-        pwdCommand += QString("ssh -p %1 %2@%3 'pwd'")
-                     .arg(connection.port)
-                     .arg(connection.username, connection.host);
-    }
+    // Build safe SSH pwd command using the helper
+    QString pwdCommand = CommandSafetyHelper::buildSafeSSHCommand(connection, "pwd");
     
     // Execute command to get current directory
     QProcess *pwdProcess = new QProcess(this);
@@ -1584,20 +1609,9 @@ QString TerminalWindow::getCurrentRemoteDirectory(QTermWidget *terminal)
 void TerminalWindow::showRemoteFileBrowser(const SSHConnection &connection, const QString &remotePath, 
                                           std::function<void(const QString&)> callback)
 {
-    // Build SSH ls command to get file listing
-    QString lsCommand;
-    if (!connection.password.isEmpty()) {
-        lsCommand = QString("sshpass -p '%1' ").arg(connection.password);
-    }
-    
-    if (connection.port == 22) {
-        lsCommand += QString("ssh %1@%2 'ls -la \"%3\"'")
-                    .arg(connection.username, connection.host, remotePath);
-    } else {
-        lsCommand += QString("ssh -p %1 %2@%3 'ls -la \"%4\"'")
-                    .arg(connection.port)
-                    .arg(connection.username, connection.host, remotePath);
-    }
+    // Build safe SSH ls command using the helper
+    QString lsCommand = CommandSafetyHelper::buildSafeSSHCommand(connection, 
+        QString("ls -la %1").arg(CommandSafetyHelper::escapeShellArgument(remotePath)));
     
     // Create progress dialog for file listing
     QProgressDialog *listDialog = new QProgressDialog("Loading remote files...", "Cancel", 0, 0, this);
@@ -1615,9 +1629,10 @@ void TerminalWindow::showRemoteFileBrowser(const SSHConnection &connection, cons
         
         if (exitCode != 0) {
             QString error = lsProcess->readAllStandardError();
+            QString friendlyError = SSHErrorHandler::getErrorDescription(exitCode);
             QMessageBox::warning(this, "Browse Failed", 
-                QString("Failed to browse directory on %1:\n%2")
-                .arg(connection.name, error));
+                QString("Failed to browse directory on %1:\n%2\n\nTechnical details:\n%3")
+                .arg(connection.name, friendlyError, error));
             callback(QString());
             lsProcess->deleteLater();
             return;
