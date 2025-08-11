@@ -194,7 +194,7 @@ protected:
         bool hovered = underMouse();
 
         // Background color
-        QColor bgColor = hovered ? QColor(200, 200, 200) : QColor(240, 240, 240);
+        QColor bgColor = hovered ? QColor(100, 149, 237) : QColor(240, 240, 240);
         painter.fillRect(rect(), bgColor);
 
         // Draw borders
