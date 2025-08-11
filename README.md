@@ -1,87 +1,55 @@
 # Qt Terminal with SSH Connection Manager
 
-A modern Qt-based terminal emulator with built-in SSH connection management, inspired by mRemoteNG but focused on terminal connections.
+A modern Qt-based terminal emulator with built-in SSH connection management, inspired by mRemoteNG but focused on terminal connections. Features a split-pane interface with connection tree, detailed connection panel, and multi-tab terminal area.
 
 ![Qt Terminal Screenshot](screenshot.png)
 
 ## Features
 
 ### ✅ Implemented Features
-- **🖥️ Multi-tab terminal interface** with QTermWidget
-- **🌳 SSH Connection Tree** - Organized sidebar with folder structure and emoji icons
-- **📁 Connection Management** - Add, edit, delete SSH connections with visual dialogs
-- **🔑 Password Support** - Store SSH passwords with show/hide toggle (optional)
-- **💾 Persistent Storage** - Connections saved to JSON file automatically
-- **🎨 Visual Organization** - Emoji icons for different server types and folders
-- **📋 Context Menus** - Right-click menus for terminals and connections
-- **⌨️ Keyboard Shortcuts** - Standard shortcuts for copy/paste, new tabs, etc.
-- **🔤 Font Customization** - Change font family and size (Ctrl++ / Ctrl+-)
-- **🎨 Color Schemes** - Multiple terminal color themes
-- **💡 Connection Testing** - Test host connectivity before connecting
-- **📊 Status Bar** - Shows font info, tab count, and connection count
-- **🔍 Smart Defaults** - Intelligent folder suggestions and connection validation
-- **🚀 Automatic SSH Connections** - One-click SSH with automatic password authentication
+- **🖥️ Multi-tab Terminal Interface** - Full qtermwidget integration with tabbed terminals
+- **🌳 Split-Pane SSH Connection Manager** - Three-panel layout with connection tree, details panel, and terminals
+- **📋 Connection Details Panel** - Live connection information with quick-connect buttons
+- **📁 Visual Connection Organization** - Folder structure with distinctive emoji icons
+- **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
+- **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
+- **📤📥 File Transfer Capabilities** - SCP upload/download with visual file browser
+- **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
+- **🔍 Connection Testing** - Ping-based connectivity testing before connecting
+- **⌨️ Rich Keyboard Shortcuts** - Standard terminal shortcuts plus connection management
+- **🔤 Font Management** - Customizable fonts with zoom controls (Ctrl++ / Ctrl+-)
+- **🎨 Multiple Color Schemes** - Various terminal color themes
+- **📊 Comprehensive Status Bar** - Font info, tab count, connection count, and activity status
+- **🚀 Auto Host Key Management** - Automatic SSH host key acceptance for new connections
+- **💡 Smart Connection Validation** - Input validation and error handling with helpful feedback
 
 ### 🚧 Planned Features
-- **🔐 SSH Key Management** - Integrate SSH key authentication  
-- **📈 Connection History** - Track recent connections
-- **🔍 Quick Connect Toolbar** - Fast SSH connections with search
-- **🎯 Connection Import/Export** - Share connection configurations
-- **🔒 Encrypted Storage** - Secure password storage options
+- **🔐 SSH Key Management** - Integration with SSH agent and key files
+- **📈 Connection History** - Track and quick-access recent connections
+- **🔍 Quick Connect Search** - Fast connection search and filtering
+- **🎯 Import/Export** - Share connection configurations (JSON, CSV, other formats)
+- **🔒 Password Encryption** - Secure encrypted password storage options
 
-## Password Authentication
+## Interface Layout
 
-The application now supports password-based SSH authentication:
+The application features a modern three-panel layout:
 
-### Password Storage
-- **Optional Field**: Password storage is completely optional
-- **Plain Text Warning**: Passwords are currently stored in plain text in the JSON file
-- **Show/Hide Toggle**: Connection dialog includes a checkbox to show/hide password while typing
-- **Automatic Authentication**: When password is provided, connections use `sshpass` for automatic login
+### Left Panel (Split Vertically)
+- **Top: Connection Tree** - Hierarchical view of SSH connections organized by folders
+- **Bottom: Connection Details** - Live details of selected connection with action buttons
 
-### Security Considerations
-- **Local Storage**: Passwords are stored locally in `~/.config/QtTerminalExample/connections.json`
-- **File Permissions**: Ensure your config directory has appropriate permissions (600/700)
-- **Production Use**: For production environments, consider using SSH keys instead of passwords
-- **Future Enhancement**: Encrypted storage is planned for future versions
+### Right Panel
+- **Multi-Tab Terminal Area** - Terminal tabs with close buttons and context menus
 
-### SSH Host Key Management
-The application automatically handles SSH host key verification for new connections:
+### Navigation Features
+- **Resizable Splitters** - Drag to resize panels with visual grip handles
+- **Collapsible Panels** - Minimize panels as needed (panels maintain minimum widths)
+- **Context Menus** - Right-click anywhere for relevant actions
 
-**Automatic Host Key Acceptance:**
-- Uses `-o StrictHostKeyChecking=accept-new` SSH option
-- New host keys are automatically accepted and added to `~/.ssh/known_hosts`
-- Prevents connection hanging on first-time connections
-- Changed host keys will still prompt for verification (security feature)
+## Connection Management
 
-**Manual Host Key Verification (for higher security):**
-```bash
-# Pre-verify host keys before connecting
-ssh-keyscan -H hostname >> ~/.ssh/known_hosts
-
-# Or connect manually first to verify
-ssh user@hostname
-```
-
-**Security Note:** The automatic acceptance is convenient but less secure than manual verification. For production environments, consider pre-populating known_hosts with verified keys.
-
-**Install sshpass:**
-```bash
-# Ubuntu/Debian
-sudo apt install sshpass
-
-# Fedora/RHEL
-sudo dnf install sshpass
-
-# Arch Linux
-sudo pacman -S sshpass
-```
-
-**Without sshpass**: If `sshpass` is not installed, the application will connect normally and prompt for password manually.
-
-## Connection Organization
-
-The application organizes connections into folders with distinctive emoji icons:
+### Connection Organization
+Connections are organized into folders with distinctive emoji icons:
 
 - **🏢 Production** - Live servers and production environments
 - **🔧 Development** - Development and staging servers  
@@ -90,6 +58,7 @@ The application organizes connections into folders with distinctive emoji icons:
 - **🚀 Staging** - Pre-production staging environments
 - **📁 Custom** - User-defined folder names
 
+### Connection Types
 Connection types are automatically detected and iconized:
 - **🖥️ Web Servers** - Web, WWW, HTTP servers
 - **🗄️ Databases** - Database, DB, SQL servers  
@@ -97,41 +66,95 @@ Connection types are automatically detected and iconized:
 - **🧪 Test Servers** - Testing and QA servers
 - **☁️ Cloud/VPS** - Cloud instances and VPS servers
 
+### Connection Details Panel
+The bottom-left panel shows comprehensive connection information:
+- **Connection Name** - Display name with folder context
+- **Host Information** - Hostname/IP address and port
+- **Authentication** - Username and password status (shows "••••••••" if password saved)
+- **Quick Actions** - Connect, Edit, and Delete buttons
+- **Real-time Updates** - Panel updates automatically when selecting different connections
+
+## Password Authentication
+
+### Password Security Features
+- **Optional Storage** - Password field is completely optional
+- **Show/Hide Toggle** - Connection dialog includes visibility toggle while typing
+- **Status Indicators** - Connection tooltips and details panel show password status
+- **Automatic Authentication** - Uses `sshpass` for seamless login when password is available
+
+### Security Considerations
+- **Local Storage** - Passwords stored in `~/.config/QtTerminalExample/connections.json`
+- **Plain Text Warning** - Currently stored unencrypted (encryption planned)
+- **File Permissions** - Ensure config directory has appropriate permissions (600/700)
+- **Production Recommendation** - SSH keys preferred for production environments
+
+### SSH Host Key Management
+- **Automatic Acceptance** - Uses `-o StrictHostKeyChecking=accept-new` for new hosts
+- **Known Hosts Integration** - New keys automatically added to `~/.ssh/known_hosts`
+- **Security Balance** - Prevents hanging on first connections while maintaining security for changed keys
+- **Manual Override** - Pre-populate known_hosts for maximum security if desired
+
+## File Transfer Capabilities
+
+### SCP Integration
+- **Upload Files** - Drag-and-drop or browse to upload files to remote servers
+- **Download Files** - Browse remote directories and download files
+- **Remote File Browser** - Visual directory navigation with file type icons
+- **Progress Dialogs** - Real-time upload/download progress with cancel option
+- **Error Handling** - Comprehensive error messages with suggested solutions
+
+### Remote Directory Navigation
+- **Auto-Detection** - Automatically detects remote working directory
+- **Visual Browser** - File listing with icons (📁 directories, 📄 files, ⚙️ executables)
+- **Directory Navigation** - Navigate up/down directory tree
+- **Manual Path Entry** - Direct path input for advanced users
+- **File Size Display** - Shows file sizes and permissions
+
+### Context Menu Integration
+Right-click on SSH terminal tabs to access:
+- **📤 Upload File to Server** - Select local file and remote destination
+- **📥 Download File from Server** - Browse and download remote files
+- **📂 Browse Remote Files** - Explore remote directory structure
+
 ## Requirements
 
 ### System Requirements
 - **Qt 5.12+** or **Qt 6.x**
 - **qtermwidget5** library
-- **Linux/Unix** system (tested on Ubuntu/Debian)
-- **C++11** compatible compiler
+- **Linux/Unix** system (tested on Ubuntu 20.04+, Debian 11+)
+- **C++11** compatible compiler (GCC 7+ or Clang 7+)
 - **CMake 3.10+** or **qmake**
 
 ### Runtime Dependencies  
-- **OpenSSH client** (for SSH connections)
-- **sshpass** (optional, for automatic password authentication)
-- **ping utility** (for connection testing)
+- **OpenSSH client** - For SSH connections (`openssh-client` package)
+- **sshpass** - For automatic password authentication (optional but recommended)
+- **ping utility** - For connection testing (usually pre-installed)
 
 ## Installation
 
-### Install Dependencies
+### Install System Dependencies
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install qtbase5-dev qtermwidget5-dev build-essential cmake openssh-client sshpass
+sudo apt install qtbase5-dev qtermwidget5-dev build-essential cmake \
+                 openssh-client sshpass iputils-ping
 ```
 
 **Fedora/RHEL:**
 ```bash
-sudo dnf install qt5-qtbase-devel qtermwidget-qt5-devel gcc-c++ make cmake openssh-clients sshpass
+sudo dnf install qt5-qtbase-devel qtermwidget-qt5-devel gcc-c++ make cmake \
+                 openssh-clients sshpass iputils
 ```
 
 **Arch Linux:**
 ```bash
-sudo pacman -S qt5-base qtermwidget cmake openssh sshpass
+sudo pacman -S qt5-base qtermwidget cmake openssh sshpass iputils
 ```
 
-### Build with CMake
+### Build Application
+
+**With CMake (Recommended):**
 ```bash
 git clone https://github.com/yourusername/QtTerminalExample.git
 cd QtTerminalExample
@@ -140,7 +163,7 @@ cmake ..
 make -j$(nproc)
 ```
 
-### Build with qmake (alternative)
+**With qmake (Alternative):**
 ```bash
 git clone https://github.com/yourusername/QtTerminalExample.git
 cd QtTerminalExample
@@ -148,337 +171,427 @@ qmake
 make -j$(nproc)
 ```
 
-### Run
+### Run Application
 ```bash
 ./QtTerminalExample
+```
+
+### Desktop Integration (Optional)
+```bash
+# Create desktop entry
+mkdir -p ~/.local/share/applications
+cat > ~/.local/share/applications/qt-terminal.desktop << EOF
+[Desktop Entry]
+Name=Qt Terminal SSH Manager
+Comment=Terminal with SSH Connection Management
+Exec=/path/to/QtTerminalExample
+Icon=terminal
+Type=Application
+Categories=System;TerminalEmulator;
+EOF
 ```
 
 ## Usage Guide
 
 ### Terminal Operations
-- **New Tab**: `Ctrl+T` or File → New Tab
-- **Close Tab**: `Ctrl+W` or click the × on tab
-- **Copy**: `Ctrl+C` (in terminal)  
-- **Paste**: `Ctrl+V` (in terminal)
-- **Select All**: `Ctrl+A`
-- **Font Size**: `Ctrl++` / `Ctrl+-` or View menu
-- **Clear Terminal**: Right-click → Clear
+- **New Tab** - `Ctrl+T` or File → New Tab or right-click tab bar
+- **Close Tab** - `Ctrl+W` or click × on tab or right-click → Close Tab
+- **Switch Tabs** - `Ctrl+PageUp/PageDown` or click tab headers
+- **Copy** - `Ctrl+C` in terminal or right-click → Copy
+- **Paste** - `Ctrl+V` in terminal or right-click → Paste
+- **Select All** - `Ctrl+A` or right-click → Select All
+- **Clear Terminal** - Right-click → Clear or `Ctrl+L`
+
+### Font and Display
+- **Increase Font** - `Ctrl++` or View → Zoom In
+- **Decrease Font** - `Ctrl+-` or View → Zoom Out
+- **Reset Font** - `Ctrl+0` or View → Reset Zoom
+- **Font Dialog** - View → Font... for comprehensive font selection
+- **Color Schemes** - View → Color Scheme to cycle through themes
 
 ### Connection Management
-- **New Connection**: `Ctrl+N` or Connections → New Connection
-- **Edit Connection**: Right-click connection → Edit
-- **Delete Connection**: Right-click connection → Delete  
-- **Test Connection**: Use "Test Connection" button in connection dialog
-- **Connect**: Double-click any connection for automatic SSH connection
-- **Organize**: Drag connections to different folders
-- **Refresh**: `F5` or right-click → Refresh
+- **New Connection** - `Ctrl+N` or Connections → New Connection
+- **Quick Connect** - Select connection → click "🔌 Quick Connect" button
+- **Double-Click Connect** - Double-click any connection for instant SSH
+- **Edit Connection** - Select connection → click "✏️ Edit" or right-click → Edit
+- **Delete Connection** - Select connection → click "🗑️ Delete" or right-click → Delete
+- **Test Connectivity** - Use "Test Connection" button in connection dialog
+- **Add to Folder** - Right-click folder → "Add Connection to [Folder]"
 
-### Password Management
-- **Add Password**: In connection dialog, enter password in the password field
-- **Show/Hide**: Use the "Show password" checkbox to toggle visibility
-- **Optional**: Leave password field empty to use key-based or manual authentication
-- **Edit Password**: Edit connection and modify password field
-- **Security**: Connection tooltips show "(password saved)" indicator
+### File Transfer Operations
+- **Upload File** - Right-click SSH tab → "📤 Upload File to Server"
+- **Download File** - Right-click SSH tab → "📥 Download File from Server"
+- **Browse Files** - Right-click SSH tab → "📂 Browse Remote Files"
+- **Progress Monitoring** - Watch progress dialogs during transfers
+- **Error Recovery** - Review error messages for connection issues
 
-### Connection Folders
-- Right-click on folders to add connections directly to them
-- Folders auto-expand to show connections
-- Create custom folders by typing new names in the connection dialog
+### Interface Management
+- **Resize Panels** - Drag the splitter handles between panels
+- **Connection Details** - Click any connection to see details in bottom-left panel
+- **Refresh Connections** - `F5` or Connections → Refresh
+- **Status Information** - Check status bar for font, tab count, and connection count
 
-## Configuration Files
+## Configuration
 
 ### Connection Storage
-- **Location**: `~/.config/QtTerminalExample/connections.json`
-- **Format**: JSON with connection details, passwords, and folder organization
-- **Backup**: Automatically creates defaults if file is missing or corrupted
-- **Security**: Contains passwords in plain text - secure your config directory
+- **File Location** - `~/.config/QtTerminalExample/connections.json`
+- **Format** - JSON with connection details, passwords, and organization
+- **Backup Strategy** - Regularly backup your connections file
+- **Auto-Recovery** - Application creates defaults if file is missing or corrupted
 
-### Application Settings  
-- **Qt Settings**: Window geometry, fonts, and preferences
-- **Auto-save**: Settings saved on application exit
+### Security Configuration
+Secure your connection data:
+```bash
+# Set proper permissions on config directory
+chmod 700 ~/.config/QtTerminalExample
+chmod 600 ~/.config/QtTerminalExample/connections.json
 
-## Project Structure
+# Backup connections securely
+cp ~/.config/QtTerminalExample/connections.json ~/connections-backup.json.$(date +%Y%m%d)
+```
 
+### Application Settings
+- **Qt Settings Storage** - Window geometry, fonts, and UI preferences
+- **Automatic Persistence** - Settings saved automatically on exit
+- **Manual Reset** - Delete `~/.config/QtTerminalExample/` to reset all settings
+
+## Advanced Features
+
+### SSH Connection Options
+All SSH connections use optimized settings:
+- **Keep-Alive** - `ServerAliveInterval=60` and `ServerAliveCountMax=3`
+- **Host Key Policy** - `StrictHostKeyChecking=accept-new` for new connections
+- **Connection Timeout** - Automatic timeouts for failed connections
+- **Multi-Port Support** - Custom SSH ports supported with validation
+
+### Terminal Enhancements
+- **Large History Buffer** - 200,000 line history per terminal
+- **Smart Font Scaling** - Synchronized font changes across all terminals
+- **Session Persistence** - Terminal state maintained during SSH reconnections
+- **Tab Management** - Intelligent tab titling and close behavior
+
+### Error Handling & Recovery
+- **Connection Validation** - Pre-connection testing and validation
+- **Friendly Error Messages** - User-friendly error descriptions with suggested fixes
+- **Automatic Retries** - Built-in retry logic for temporary failures
+- **Fallback Options** - Graceful degradation when optional tools unavailable
+
+## Keyboard Shortcuts Reference
+
+| Action | Shortcut | Context |
+|--------|----------|---------|
+| **File Operations** |  |  |
+| New Tab | `Ctrl+T` | Global |
+| Close Tab | `Ctrl+W` | Global |
+| Quit Application | `Ctrl+Q` | Global |
+| **Connection Management** |  |  |
+| New Connection | `Ctrl+N` | Global |
+| Refresh Connections | `F5` | Global |
+| **Terminal Operations** |  |  |
+| Copy | `Ctrl+C` | In Terminal |
+| Paste | `Ctrl+V` | In Terminal |
+| Select All | `Ctrl+A` | In Terminal |
+| **View Controls** |  |  |
+| Zoom In | `Ctrl++` | Global |
+| Zoom Out | `Ctrl+-` | Global |
+| Reset Zoom | `Ctrl+0` | Global |
+
+## Troubleshooting
+
+### Installation Issues
+
+**"qtermwidget not found during build"**
+```bash
+# Ubuntu/Debian - install development package
+sudo apt install qtermwidget5-dev
+
+# Find installation location
+find /usr -name "qtermwidget*.h" 2>/dev/null
+```
+
+**"CMake configuration failed"**
+```bash
+# Ensure Qt development tools are installed
+sudo apt install qt5-qmake qtbase5-dev-tools
+
+# For Qt6, use:
+sudo apt install qt6-base-dev qt6-tools-dev
+```
+
+### Runtime Issues
+
+**"sshpass command not found" warning**
+```bash
+# Install sshpass for automatic password authentication
+sudo apt install sshpass
+
+# Without sshpass, manual password entry is required
+# The application will show a warning but continue to function
+```
+
+**"Connection hangs on first SSH attempt"**
+- This occurs when SSH encounters an unknown host key
+- The application automatically handles this with `StrictHostKeyChecking=accept-new`
+- For maximum security, manually verify host keys first:
+```bash
+ssh-keyscan -H hostname >> ~/.ssh/known_hosts
+```
+
+**"Permission denied" for connections.json**
+```bash
+# Fix file permissions
+chmod 600 ~/.config/QtTerminalExample/connections.json
+chmod 700 ~/.config/QtTerminalExample/
+```
+
+### Connection Problems
+
+**"Authentication failed" with correct password**
+- Server might have disabled password authentication
+- Check server SSH config: `PasswordAuthentication yes`
+- Try manual SSH connection to verify: `ssh user@host`
+- Consider using SSH keys for better security
+
+**"Host unreachable" errors**
+- Verify network connectivity: `ping hostname`
+- Check firewall settings on both client and server
+- Ensure SSH service is running on server: `sudo systemctl status ssh`
+
+**"File transfer fails"**
+- Verify SCP access on server (usually enabled with SSH)
+- Check file permissions on remote server
+- Ensure sufficient disk space for transfers
+- Try manual SCP to test: `scp file user@host:/path/`
+
+### Display Issues
+
+**"Application shows blank or corrupted display"**
+```bash
+# Force X11 platform (application does this automatically)
+export QT_QPA_PLATFORM=xcb
+./QtTerminalExample
+
+# For Wayland users experiencing issues
+export QT_QPA_PLATFORM=wayland
+```
+
+**"Font size too small/large"**
+- Use `Ctrl++` and `Ctrl+-` to adjust font size
+- Or go to View → Font... for detailed font selection
+- Settings are automatically saved between sessions
+
+## Development
+
+### Project Structure
 ```
 QtTerminalExample/
-├── main.cpp                 # Application entry point with X11 platform setup
-├── terminalwindow.h         # Main window header with SSH connection structure  
-├── terminalwindow.cpp       # Main window implementation with password support
-├── connectiondialog.h       # Connection add/edit dialog header with password field
-├── connectiondialog.cpp     # Connection dialog with password input and validation
+├── main.cpp                 # Application entry point with platform setup
+├── terminalwindow.h/.cpp    # Main window with three-panel interface
+├── connectiondialog.h/.cpp  # Connection add/edit dialog with password support
 ├── CMakeLists.txt           # CMake build configuration
-├── QtTerminalExample.pro    # qmake project file (alternative build)
-└── README.md               # This documentation
+├── QtTerminalExample.pro    # qmake project file (alternative)
+└── README.md               # This comprehensive documentation
 ```
+
+### Key Classes
+- **TerminalWindow** - Main application window with split-pane interface
+- **ConnectionDialog** - Add/edit connection dialog with validation
+- **SSHConnection** - Connection data structure with password support
+- **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
+
+### Code Features
+- **Modern Qt Practices** - Uses Qt 5.12+ features and best practices
+- **Memory Management** - Proper object ownership and cleanup
+- **Error Handling** - Comprehensive error handling throughout
+- **Validation** - Input validation and user feedback
+- **Security Focus** - Safe command construction and password handling
+
+### Contributing
+1. **Fork Repository** - Create your own fork for development
+2. **Feature Branches** - Use feature branches for new functionality
+3. **Code Standards** - Follow Qt coding conventions and C++ best practices
+4. **Testing** - Test on multiple Linux distributions
+5. **Documentation** - Update documentation for new features
+6. **Security Review** - Consider security implications, especially for password-related features
+
+## Version History
+
+### v0.5 (Current)
+- ✅ **Split-Pane Interface** - Three-panel layout with connection tree, details panel, and terminals
+- ✅ **Connection Details Panel** - Live connection information with quick-action buttons
+- ✅ **Enhanced File Transfer** - Visual remote file browser with directory navigation
+- ✅ **Improved Error Handling** - Comprehensive error messages and validation
+- ✅ **Visual Splitters** - Custom grip handles for panel resizing
+- ✅ **Tab Context Menus** - File transfer options in terminal tab menus
+
+### v0.4
+- ✅ **Password Support** - Complete password field implementation
+- ✅ **sshpass Integration** - Automatic password authentication
+- ✅ **Connection Testing** - Ping-based connectivity testing
+- ✅ **Enhanced Security** - SSH host key management and validation
+
+### v0.3
+- ✅ **SSH Connections** - Full SSH terminal implementation
+- ✅ **Connection Management** - Add/edit/delete dialogs
+- ✅ **JSON Persistence** - Reliable connection storage
+
+### v0.2
+- ✅ **Connection Tree** - Folder-based organization with emoji icons
+- ✅ **Basic UI** - Multi-tab terminal interface
+
+### v0.1
+- ✅ **Terminal Foundation** - Basic qtermwidget integration
+
+## Roadmap
+
+### Short Term (v0.6)
+- **🔐 SSH Key Management** - Integration with SSH agent and key files
+- **📋 Connection Import/Export** - JSON, CSV, and other format support
+- **🔍 Quick Connect Bar** - Fast connection search and recent connections
+- **📈 Connection History** - Track and manage connection history
+
+### Medium Term (v0.7)
+- **🔒 Password Encryption** - Secure encrypted password storage using Qt's cryptographic functions
+- **🎨 Themes & Customization** - Application themes and enhanced UI customization
+- **📊 Connection Statistics** - Usage tracking and connection analytics
+- **🌐 Remote Tunneling** - SSH tunnel management and port forwarding
+
+### Long Term (v1.0)
+- **🔌 Plugin System** - Extensible plugin architecture for additional protocols
+- **📝 Session Scripting** - Automation and scripting capabilities
+- **📁 Remote File Manager** - Full-featured remote file management interface
+- **📹 Session Recording** - Terminal session recording and playback
 
 ## Security Best Practices
 
 ### Password Security
-1. **File Permissions**: Secure your config directory:
+1. **File Permissions** - Secure your configuration directory:
    ```bash
    chmod 700 ~/.config/QtTerminalExample
    chmod 600 ~/.config/QtTerminalExample/connections.json
    ```
 
-2. **SSH Keys Preferred**: For production use, consider SSH key authentication:
+2. **SSH Keys Preferred** - For production environments:
    ```bash
-   ssh-keygen -t rsa -b 4096
+   ssh-keygen -t ed25519 -b 4096
    ssh-copy-id user@hostname
    ```
 
-3. **Backup Security**: If backing up connections.json, ensure secure storage
+3. **Regular Backups** - Backup connections with proper security:
+   ```bash
+   cp ~/.config/QtTerminalExample/connections.json ~/secure-backup/
+   chmod 600 ~/secure-backup/connections.json
+   ```
 
-4. **Shared Systems**: Avoid storing passwords on shared or public systems
+### Network Security
+- **VPN Usage** - Use VPN for connections over untrusted networks
+- **Key Rotation** - Regularly rotate SSH keys and passwords
+- **Monitoring** - Monitor server logs for unauthorized access attempts
+- **Firewall Rules** - Implement proper firewall rules on servers
 
-### Connection Security
-- Use strong, unique passwords for each server
-- Regularly rotate passwords
-- Monitor SSH logs for unauthorized access
-- Use fail2ban or similar tools on servers
-
-## Keyboard Shortcuts
-
-| Action | Shortcut | Menu Location |
-|--------|----------|---------------|
-| New Tab | `Ctrl+T` | File → New Tab |
-| Close Tab | `Ctrl+W` | File → Close Tab |
-| New Connection | `Ctrl+N` | Connections → New Connection |
-| Copy | `Ctrl+C` | Edit → Copy |
-| Paste | `Ctrl+V` | Edit → Paste |
-| Select All | `Ctrl+A` | Edit → Select All |
-| Zoom In | `Ctrl++` | View → Zoom In |
-| Zoom Out | `Ctrl+-` | View → Zoom Out |
-| Reset Zoom | `Ctrl+0` | View → Reset Zoom |
-| Refresh | `F5` | Connections → Refresh |
-| Quit | `Ctrl+Q` | File → Quit |
-
-## Development Status
-
-This project follows an incremental development approach:
-
-1. **✅ Feature 1**: Basic terminal with connection tree (COMPLETE)
-2. **✅ Feature 2**: JSON connection storage and persistence (COMPLETE)  
-3. **✅ Feature 3**: Add/Edit/Delete connection dialogs with validation (COMPLETE)
-4. **✅ Feature 4**: SSH connection implementation with password support (COMPLETE)
-5. **📋 Feature 5**: Advanced connection management and import/export (PLANNED)
-6. **📋 Feature 6**: SSH key management and security features (PLANNED)
-
-### Current State (v0.4)
-The application is fully functional for SSH connection management with password support. All core features are implemented and working, including automatic SSH connections with saved passwords.
-
-## Screenshots
-
-### Main Interface
-- Clean split-pane design with connection tree (left) and terminals (right)
-- Professional emoji-based organization system
-- Multi-tab terminal interface with close buttons
-- Context-sensitive menus throughout
-
-### Connection Management
-- Intuitive add/edit dialogs with password field and show/hide toggle
-- Connection testing with progress indicators  
-- Smart folder management with predefined categories
-- Visual feedback for all operations
-- Password indicators in connection tooltips
-
-## Troubleshooting
-
-### Common Issues
-
-**"qtermwidget not found"**
-```bash
-# Ubuntu/Debian
-sudo apt install qtermwidget5-dev
-
-# Find qtermwidget location
-find /usr -name "qtermwidget.h" 2>/dev/null
-```
-
-**"sshpass not found" warning**
-- Install sshpass: `sudo apt install sshpass`
-- Without sshpass, you'll need to enter passwords manually
-- The application will show a warning and proceed with standard SSH
-
-**"X11 platform issues"**
-- The app forces X11 platform to avoid Wayland terminal issues
-- If you experience display problems, try: `export QT_QPA_PLATFORM=xcb`
-
-**"Connections not saving"**
-- Check permissions: `ls -la ~/.config/QtTerminalExample/`
-- Manually create directory: `mkdir -p ~/.config/QtTerminalExample/`
-- Ensure write permissions: `chmod 700 ~/.config/QtTerminalExample/`
-
-**"Password not working"**
-- Verify sshpass is installed: `which sshpass`
-- Check if server allows password authentication
-- Try connecting manually first: `ssh user@host`
-- Some servers require key-based authentication only
-
-**"SSH connection hangs on first connection"**
-- This happens when SSH encounters an unknown host key
-- The application uses `-o StrictHostKeyChecking=accept-new` to handle this
-- New host keys are automatically accepted and added to known_hosts
-- For higher security, you can manually verify host keys first:
-  ```bash
-  ssh-keyscan -H hostname >> ~/.ssh/known_hosts
-  ```
-
-### Password-related Issues
-
-**"Password visible in process list"**
-- This is a known limitation of sshpass
-- For sensitive environments, use SSH keys instead
-- Consider this when using on shared systems
-
-**"Connection fails with correct password"**
-- Server might have disabled password authentication
-- Check server SSH config: `PasswordAuthentication yes`
-- Try manual connection to verify credentials
-- Some servers require specific SSH client options
-
-### Development Setup
-1. Fork the repository  
-2. Install Qt development packages
-3. Build with CMake or qmake
-4. Test your changes with various connection types
-5. Submit a pull request
-
-### Code Style
-- Follow Qt naming conventions
-- Use 4-space indentation
-- Comment complex terminal operations
-- Include error handling for file operations
-- Secure password handling practices
+### Development Security
+- **Code Review** - All password-related code should be reviewed
+- **Static Analysis** - Use static analysis tools for security scanning
+- **Dependency Updates** - Keep Qt and system libraries updated
+- **Secure Coding** - Follow secure coding practices for command execution
 
 ## Feature Comparison
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Multi-tab Terminal | ✅ Complete | Full qtermwidget integration |
-| Connection Tree | ✅ Complete | Folder organization with emoji icons |
-| SSH Connections | ✅ Complete | One-click SSH with automatic login |
-| Password Storage | ✅ Complete | Optional password field with show/hide |
-| Connection Testing | ✅ Complete | Ping-based connectivity testing |
-| JSON Persistence | ✅ Complete | Automatic save/load of connections |
-| Context Menus | ✅ Complete | Right-click actions throughout UI |
-| Font Management | ✅ Complete | Font selection and zoom controls |
-| Color Schemes | ✅ Complete | Multiple terminal color themes |
-| SSH Key Support | 🚧 Planned | Integration with SSH agent and keys |
-| Encrypted Storage | 🚧 Planned | Secure password encryption |
-| Import/Export | 🚧 Planned | Share connection configurations |
+| **Core Functionality** |  |  |
+| Multi-tab Terminal | ✅ Complete | Full qtermwidget integration with tabbed interface |
+| Split-Pane Interface | ✅ Complete | Three-panel layout with resizable splitters |
+| SSH Connections | ✅ Complete | One-click SSH with automatic authentication |
+| Connection Tree | ✅ Complete | Hierarchical folder organization with emoji icons |
+| **Connection Management** |  |  |
+| Connection Details Panel | ✅ Complete | Live connection information with action buttons |
+| Password Storage | ✅ Complete | Optional password field with show/hide toggle |
+| Connection Testing | ✅ Complete | Ping-based connectivity validation |
+| JSON Persistence | ✅ Complete | Automatic save/load with error recovery |
+| **File Transfer** |  |  |
+| SCP Upload/Download | ✅ Complete | Visual file transfer with progress dialogs |
+| Remote File Browser | ✅ Complete | Directory navigation with file type icons |
+| Error Handling | ✅ Complete | Comprehensive error messages and recovery |
+| **Advanced Features** |  |  |
+| SSH Key Support | 🚧 Planned | Integration with SSH agent and key files |
+| Password Encryption | 🚧 Planned | Secure encrypted storage implementation |
+| Connection History | 🚧 Planned | Recent connections and usage tracking |
+| Import/Export | 🚧 Planned | Configuration sharing and migration tools |
 
-## API Reference
+## API Documentation
 
-### SSHConnection Structure
+### Core Classes
+
+**SSHConnection Structure:**
 ```cpp
 struct SSHConnection {
-    QString name;        // Display name for the connection
-    QString host;        // Hostname or IP address
+    QString name;        // Display name for connection
+    QString host;        // Hostname or IP address  
     QString username;    // SSH username
-    QString password;    // SSH password (optional)
+    QString password;    // SSH password (optional, stored in plain text)
     int port;           // SSH port (default: 22)
-    QString folder;     // Organization folder
+    QString folder;     // Organization folder name
 };
 ```
 
-### Key Methods
-- `createSSHTerminal(const SSHConnection &connection)` - Creates terminal with SSH connection
-- `loadConnections()` - Loads connections from JSON file
-- `saveConnections()` - Saves connections to JSON file
-- `addNewConnection()` - Opens dialog to create new connection
-- `editConnection(QTreeWidgetItem *item)` - Edit existing connection
+**Key Methods:**
+```cpp
+// Terminal creation
+QTermWidget* createSSHTerminal(const SSHConnection &connection);
 
-## Contributing
+// Connection management  
+void loadConnections();
+void saveConnections();
+void addNewConnection();
+void editConnection(QTreeWidgetItem *item);
 
-### Areas for Contribution
-1. **SSH Key Management** - Integrate with SSH agent and key files
-2. **Password Encryption** - Implement secure password storage
-3. **Connection Import** - Support for other terminal manager formats
-4. **Themes** - Additional terminal color schemes
-5. **Shortcuts** - More keyboard shortcuts and customization
-6. **Documentation** - Improve code documentation and examples
+// File operations
+void uploadFileToSSH(const SSHConnection &connection);
+void downloadFileFromSSH(const SSHConnection &connection);
+```
 
-### Development Guidelines
-1. Maintain Qt coding standards
-2. Add unit tests for new features
-3. Update documentation for API changes
-4. Test on multiple Linux distributions
-5. Consider security implications for password-related features
+## Community & Support
 
-## Version History
+### Getting Help
+- **GitHub Issues** - [Report bugs and request features](../../issues)
+- **GitHub Discussions** - [Ask questions and share ideas](../../discussions)
+- **Documentation** - Check this README and inline code comments
+- **Examples** - Review the default connections for usage examples
 
-### v0.4 (Current)
-- ✅ Added password field to SSH connections
-- ✅ Implemented sshpass integration for automatic authentication
-- ✅ Added show/hide password toggle in connection dialog
-- ✅ Updated JSON storage to include password field
-- ✅ Enhanced connection tooltips with password indicators
-- ✅ Improved security documentation and best practices
+### Contributing
+- **Bug Reports** - Use GitHub Issues with detailed reproduction steps
+- **Feature Requests** - Describe use cases and expected behavior
+- **Pull Requests** - Follow coding standards and include tests
+- **Documentation** - Help improve documentation and examples
 
-### v0.3
-- ✅ Complete SSH connection implementation
-- ✅ Add/Edit/Delete connection dialogs
-- ✅ Connection testing functionality
-- ✅ JSON persistence with folder organization
-
-### v0.2
-- ✅ Connection tree with folder organization
-- ✅ Emoji-based visual organization
-- ✅ Basic connection management
-
-### v0.1
-- ✅ Basic terminal interface
-- ✅ Multi-tab support
-- ✅ Font and color management
-
-## Roadmap
-
-### Short Term (v0.5)
-- SSH key file integration
-- Connection import/export
-- Enhanced error handling
-- Connection history tracking
-
-### Medium Term (v0.6)
-- Encrypted password storage
-- SSH agent integration
-- Quick connect toolbar
-- Advanced SSH options
-
-### Long Term (v1.0)
-- Plugin system
-- Scripting support
-- Remote file browser
-- Session recording
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Security
+- **Vulnerability Reports** - Report security issues privately via email
+- **Security Best Practices** - Follow the security guidelines in this README
+- **Code Review** - All security-related changes undergo thorough review
 
 ## Acknowledgments
 
-- Built with [Qt Framework](https://www.qt.io/) for cross-platform GUI
-- Uses [qtermwidget](https://github.com/lxqt/qtermwidget) for terminal emulation
-- Inspired by [mRemoteNG](https://mremoteng.org/) for connection management UX
-- [sshpass](https://sourceforge.net/projects/sshpass/) for password automation
-- Terminal design influenced by modern terminal emulators
-- Thanks to the Qt and Linux terminal community for guidance
+- **[Qt Framework](https://www.qt.io/)** - Cross-platform application framework
+- **[qtermwidget](https://github.com/lxqt/qtermwidget)** - Terminal widget implementation
+- **[mRemoteNG](https://mremoteng.org/)** - Inspiration for connection management UX
+- **[sshpass](https://sourceforge.net/projects/sshpass/)** - Password automation for SSH
+- **OpenSSH Community** - SSH protocol implementation and tools
+- **Linux Terminal Community** - Feedback, testing, and feature suggestions
 
-## Support
+## License
 
-For questions, feature requests, or bug reports:
-- **Issues**: Use [GitHub Issues](../../issues) for bug reports and feature requests
-- **Discussions**: Use [GitHub Discussions](../../discussions) for questions and ideas
-- **Security**: Report security issues privately via email
-- **Documentation**: Check this README and code comments
+This project is licensed under the MIT License.
 
 ## Author
 
-**QtTerminalExample** - A modern terminal with SSH connection management  
-Created with ❤️ for the Linux terminal community
+**Qt Terminal with SSH Connection Manager**  
+*Modern terminal emulation with integrated SSH connection management*
+
+Created with ❤️ for efficient Linux system administration and development workflows.
 
 ---
 
-**Status**: Active development | **Version**: 0.4 | **Next Milestone**: SSH Key Management
+**Current Status**: Active Development | **Version**: 0.5 | **Next Milestone**: SSH Key Management  
 
-*Secure your connections, streamline your workflow* 🚀
+*Streamline your SSH workflow with visual connection management* 🚀
