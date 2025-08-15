@@ -13,12 +13,15 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+##link_directories(/usr/local/lib)
+
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
 
 add_executable(QtTerminalExample
     main.cpp
     terminalwindow.cpp
     connectiondialog.cpp
+    enhanced_qtermwidget.cpp
 )
 
 # Try to find qtermwidget, fallback to manual path

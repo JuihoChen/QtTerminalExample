@@ -1,6 +1,7 @@
 // ============ Updated terminalwindow.cpp with Split Left Pane ============
 #include "terminalwindow.h"
 #include "connectiondialog.h"
+#include "enhanced_qtermwidget.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -224,7 +225,10 @@ void TerminalWindow::selectAllText()
     QTermWidget *terminal = getCurrentTerminal();
     if (terminal) {
         // Send Ctrl+A to select all text (universal terminal shortcut)
-        terminal->sendText("\x01"); // Ctrl+A ASCII code
+        //terminal->sendText("\x01"); // Ctrl+A ASCII code
+        qobject_cast<EnhancedQTermWidget*>(terminal)->selectAll();
+
+        qDebug() << "Selected text length:" << terminal->selectedText().length();
     }
 }
 
@@ -298,7 +302,7 @@ void TerminalWindow::onTerminalFinished()
 // Add this new helper method to terminalwindow.cpp:
 QTermWidget* TerminalWindow::createTerminalWidget()
 {
-    QTermWidget *terminal = new QTermWidget(this);
+    EnhancedQTermWidget* terminal = new EnhancedQTermWidget(this);
     
     // Common settings for ALL terminals
     terminal->setHistorySize(200000);  // 200k lines - unlimited-like experience
