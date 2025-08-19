@@ -4,8 +4,7 @@
 #include <QStyle>
 #include <QAbstractButton>
 
-EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) 
-    : QTermWidget(parent), m_hasInitialSelection(false), m_isSelecting(false) {
+EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(parent) {
     
     // Find the terminal display widget (usually the first child widget that handles display)
     m_terminalDisplay = nullptr;
@@ -116,91 +115,6 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
     return QTermWidget::eventFilter(obj, event);
 }
 
-bool EnhancedQTermWidget::handleMousePress(QMouseEvent *event) {
-    if (event->button() != Qt::LeftButton) {
-        return false; // Let the event pass through
-    }
-    
-    if (event->modifiers() & Qt::ShiftModifier) {
-        // Shift+Click: Extend existing selection
-        if (m_hasInitialSelection) {
-            extendSelectionTo(event->pos());
-            return true; // Consume the event
-        }
-    } else {
-        // Regular click: Start new selection
-        m_selectionStartPos = event->pos();
-        m_hasInitialSelection = true;
-        m_isSelecting = true;
-        
-        // Don't clear selection here, let the normal click behavior handle it
-    }
-    
-    return false; // Let the original event continue for normal click behavior
-}
-
-void EnhancedQTermWidget::handleMouseMove(QMouseEvent *event) {
-    if (!m_isSelecting) return;
-    
-    // Update selection during drag
-    extendSelectionTo(event->pos());
-}
-
-void EnhancedQTermWidget::handleMouseRelease(QMouseEvent *event) {
-    if (event->button() == Qt::LeftButton) {
-        m_isSelecting = false;
-    }
-}
-
-void EnhancedQTermWidget::extendSelectionTo(const QPoint &endPos) {
-    if (!m_terminalDisplay || !m_hasInitialSelection) return;
-    
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    if (!scrollBar) return;
-    
-    // Temporarily remove event filter to prevent recursion
-    m_terminalDisplay->removeEventFilter(this);
-    
-    // Disable updates to prevent blinking
-    setUpdatesEnabled(false);
-    m_terminalDisplay->setUpdatesEnabled(false);
-    setAttribute(Qt::WA_UpdatesDisabled, true);
-    m_terminalDisplay->setAttribute(Qt::WA_UpdatesDisabled, true);
-    
-    // Clear existing selection
-    QMouseEvent clearClick(QEvent::MouseButtonPress, QPoint(1, 1), 
-                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &clearClick);
-    
-    QMouseEvent clearRelease(QEvent::MouseButtonRelease, QPoint(1, 1), 
-                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &clearRelease);
-    
-    // Create new selection from start to end position
-    QMouseEvent press(QEvent::MouseButtonPress, m_selectionStartPos, 
-                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &press);
-    
-    QMouseEvent move(QEvent::MouseMove, endPos, 
-                   Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &move);
-    
-    QMouseEvent release(QEvent::MouseButtonRelease, endPos, 
-                      Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &release);
-    
-    // Re-enable updates
-    setAttribute(Qt::WA_UpdatesDisabled, false);
-    m_terminalDisplay->setAttribute(Qt::WA_UpdatesDisabled, false);
-    setUpdatesEnabled(true);
-    m_terminalDisplay->setUpdatesEnabled(true);
-    
-    // Reinstall event filter
-    m_terminalDisplay->installEventFilter(this);
-    
-    m_terminalDisplay->update();
-}
-
 void EnhancedQTermWidget::selectAll() {
     if (!m_terminalDisplay || !findChild<QScrollBar*>()) return;
     
@@ -241,12 +155,7 @@ void EnhancedQTermWidget::selectAll() {
     
     // Restore scroll position before re-enabling updates
     scrollBar->setValue(originalScrollValue);
-    
-    // Set selection state for shift+click extending
-    m_selectionStartPos = startPos;
-    m_hasInitialSelection = true;
-    m_isSelecting = false;
-    
+
     // Re-enable everything at once
     setAttribute(Qt::WA_UpdatesDisabled, false);
     m_terminalDisplay->setAttribute(Qt::WA_UpdatesDisabled, false);
@@ -257,26 +166,4 @@ void EnhancedQTermWidget::selectAll() {
     m_terminalDisplay->installEventFilter(this);
     
     m_terminalDisplay->update();
-}
-
-void EnhancedQTermWidget::clearSelection() {
-    if (!m_terminalDisplay) return;
-    
-    // Temporarily remove event filter
-    m_terminalDisplay->removeEventFilter(this);
-    
-    // Send a simple click to clear selection
-    QMouseEvent clearClick(QEvent::MouseButtonPress, QPoint(1, 1), 
-                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &clearClick);
-    
-    QMouseEvent clearRelease(QEvent::MouseButtonRelease, QPoint(1, 1), 
-                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &clearRelease);
-    
-    // Reinstall event filter
-    m_terminalDisplay->installEventFilter(this);
-    
-    m_hasInitialSelection = false;
-    m_isSelecting = false;
 }

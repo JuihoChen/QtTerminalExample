@@ -10,27 +10,16 @@
 
 class EnhancedQTermWidget : public QTermWidget {
     Q_OBJECT
-    
+
 public:
     explicit EnhancedQTermWidget(QWidget *parent = nullptr);
-    
     void selectAll();
-    void clearSelection();
-    void extendSelectionTo(const QPoint &pos);
 
 private:
     QWidget* m_terminalDisplay = nullptr;
-    QPoint m_selectionStartPos;
-    bool m_hasInitialSelection = false;
-    bool m_isSelecting = false;
-    
+
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
-    
-private slots:
-    bool handleMousePress(QMouseEvent *event);
-    void handleMouseMove(QMouseEvent *event);
-    void handleMouseRelease(QMouseEvent *event);
 };
 
 #endif
