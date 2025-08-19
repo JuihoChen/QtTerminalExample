@@ -91,7 +91,7 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
             }
         }
     }
-    
+    #if 0 // eventFilter is interfering with QTermWidget's native selection mechanism.
     // Handle mouse events
     if (obj == m_terminalDisplay && event->type() >= QEvent::MouseButtonPress && event->type() <= QEvent::MouseMove) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
@@ -112,7 +112,7 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
                 break;
         }
     }
-    
+    #endif
     return QTermWidget::eventFilter(obj, event);
 }
 
