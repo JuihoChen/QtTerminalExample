@@ -116,54 +116,41 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
 }
 
 void EnhancedQTermWidget::selectAll() {
-    if (!m_terminalDisplay || !findChild<QScrollBar*>()) return;
+    // Get the terminal dimensions
+    int screenLines = screenLinesCount();
+    int screenColumns = screenColumnsCount();
+    int historyLines = historyLinesCount();
     
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    int originalScrollValue = scrollBar->value();
-    
-    // Temporarily remove event filter to prevent recursion
-    m_terminalDisplay->removeEventFilter(this);
-    
-    // More aggressive update blocking
-    setUpdatesEnabled(false);
-    m_terminalDisplay->setUpdatesEnabled(false);
-    setAttribute(Qt::WA_UpdatesDisabled, true);
-    m_terminalDisplay->setAttribute(Qt::WA_UpdatesDisabled, true);
-    
-    // Perform selection operations
-    scrollBar->setValue(scrollBar->minimum());
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    
-    QPoint startPos(5, 5);
-    QMouseEvent press(QEvent::MouseButtonPress, startPos, 
-                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &press);
-    
-    scrollBar->setValue(scrollBar->maximum());
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    
-    QRect displayRect = m_terminalDisplay->geometry();
-    QPoint endPos(displayRect.width() - 10, displayRect.height() - 10);
-    
-    QMouseEvent move(QEvent::MouseMove, endPos, 
-                   Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &move);
-    
-    QMouseEvent release(QEvent::MouseButtonRelease, endPos, 
-                      Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(m_terminalDisplay, &release);
-    
-    // Restore scroll position before re-enabling updates
-    scrollBar->setValue(originalScrollValue);
+    if (screenLines <= 0 || screenColumns <= 0) {
+        qDebug() << "Invalid terminal dimensions, cannot select all";
+        return;
+    }
 
-    // Re-enable everything at once
-    setAttribute(Qt::WA_UpdatesDisabled, false);
-    m_terminalDisplay->setAttribute(Qt::WA_UpdatesDisabled, false);
-    setUpdatesEnabled(true);
-    m_terminalDisplay->setUpdatesEnabled(true);
+    // Calculate the actual selection coordinates
+    int startRow = -historyLines;
+    int startCol = 0;
+    int endRow = screenLines - 1;
+    int endCol = screenColumns - 1;
+
+    setSelectionStart(startRow, startCol);
+    setSelectionEnd(endRow, endCol);
+
+    // Optional safety net: Force update if selectionChanged signals don't work
+    // This adds a third update but ensures visual feedback
+    if (m_terminalDisplay) {
+        qDebug() << "Adding safety net visual update...";
+        QMetaObject::invokeMethod(m_terminalDisplay, "updateImage", Qt::QueuedConnection);
+    }
+
+    // Verify the selection worked
+    QString selectedText = this->selectedText();
+    qDebug() << "Selection result - Selected text length:" << selectedText.length();
     
-    // Reinstall event filter
-    m_terminalDisplay->installEventFilter(this);
-    
-    m_terminalDisplay->update();
+    if (selectedText.length() > 100) {
+        qDebug() << "First 100 characters:" << selectedText.left(100);
+    } else if (selectedText.length() > 0) {
+        qDebug() << "Full selected text:" << selectedText;
+    } else {
+        qDebug() << "WARNING: No text was selected!";
+    }
 }
