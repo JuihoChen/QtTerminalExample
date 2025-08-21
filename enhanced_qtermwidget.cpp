@@ -5,7 +5,7 @@
 #include <QAbstractButton>
 
 EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(parent) {
-    
+
     // Find the terminal display widget (usually the first child widget that handles display)
     m_terminalDisplay = nullptr;
     
@@ -116,41 +116,72 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
 }
 
 void EnhancedQTermWidget::selectAll() {
-    // Get the terminal dimensions
+
+    // Get scroll bar reference
+    QScrollBar* scrollBar = findChild<QScrollBar*>();
+    int originalValue = 0;
+    bool needsScrollRestore = false;
+
+    if (scrollBar) {
+        originalValue = scrollBar->value();
+        needsScrollRestore = (originalValue != scrollBar->maximum());
+        qDebug() << "Original scroll position:" << originalValue << "max:" << scrollBar->maximum();
+    }
+
+    // Minimal anti-flicker - only disable terminal display updates
+    if (needsScrollRestore && m_terminalDisplay) {
+        m_terminalDisplay->setUpdatesEnabled(false);
+
+        // Scroll to bottom for proper selection
+        scrollBar->setValue(scrollBar->maximum());
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        qDebug() << "Silently scrolled to bottom, new position:" << scrollBar->value();
+    }
+
+    // Get terminal dimensions
     int screenLines = screenLinesCount();
     int screenColumns = screenColumnsCount();
     int historyLines = historyLinesCount();
-    
+
     if (screenLines <= 0 || screenColumns <= 0) {
-        qDebug() << "Invalid terminal dimensions, cannot select all";
+        qDebug() << "Invalid terminal dimensions";
+        // Re-enable updates before returning
+        if (needsScrollRestore && m_terminalDisplay) {
+            m_terminalDisplay->setUpdatesEnabled(true);
+        }
         return;
     }
 
-    // Calculate the actual selection coordinates
-    int startRow = -historyLines;
-    int startCol = 0;
+    qDebug() << "Dimensions - Screen:" << screenLines << "x" << screenColumns 
+             << "History:" << historyLines;
+
+    int startRow = historyLines > 0 ? -historyLines : 0;
     int endRow = screenLines - 1;
-    int endCol = screenColumns - 1;
 
-    setSelectionStart(startRow, startCol);
-    setSelectionEnd(endRow, endCol);
+    qDebug() << "Setting selection from (" << startRow << ",0) to (" << endRow << "," << (screenColumns-1) << ")";
 
-    // Optional safety net: Force update if selectionChanged signals don't work
-    // This adds a third update but ensures visual feedback
-    if (m_terminalDisplay) {
-        qDebug() << "Adding safety net visual update...";
-        QMetaObject::invokeMethod(m_terminalDisplay, "updateImage", Qt::QueuedConnection);
+    setSelectionStart(startRow, 0);
+    setSelectionEnd(endRow, screenColumns - 1);
+
+    // Process selection events
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+    QString selectedText = this->selectedText(true);
+    qDebug() << "Selection result - length:" << selectedText.length();
+
+    // Restore scroll position and re-enable updates
+    if (needsScrollRestore && scrollBar && m_terminalDisplay) {
+        scrollBar->setValue(originalValue);
+
+        m_terminalDisplay->setUpdatesEnabled(true);
+        m_terminalDisplay->update();
+
+        qDebug() << "Restored scroll position to:" << scrollBar->value();
     }
 
-    // Verify the selection worked
-    QString selectedText = this->selectedText();
-    qDebug() << "Selection result - Selected text length:" << selectedText.length();
-    
-    if (selectedText.length() > 100) {
-        qDebug() << "First 100 characters:" << selectedText.left(100);
-    } else if (selectedText.length() > 0) {
-        qDebug() << "Full selected text:" << selectedText;
+    if (selectedText.length() > 0) {
+        qDebug() << "Selection successful! Length:" << selectedText.length();
     } else {
-        qDebug() << "WARNING: No text was selected!";
+        qDebug() << "ERROR: Selection failed even after scrolling to bottom!";
     }
 }
