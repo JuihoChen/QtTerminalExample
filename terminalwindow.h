@@ -75,6 +75,7 @@ private slots:
     void closeTab(int index);
     void closeCurrentTab();
     void showContextMenu(const QPoint &pos);
+    void copyClipboard();
     void selectAllText();
     void onTabChanged(int index);
     void onTerminalFinished();

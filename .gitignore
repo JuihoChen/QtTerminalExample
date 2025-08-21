@@ -23,4 +23,38 @@ Makefile
 QtTerminalExample_autogen/
 compile_commands.json
 
+# VS Code settings (optional - you might want to track some settings)
 .vscode/
+
+# qtermwidget build artifacts (if using as subdirectory)
+qtermwidget/build/
+qtermwidget/CMakeFiles/
+qtermwidget/CMakeCache.txt
+qtermwidget/cmake_install.cmake
+qtermwidget/Makefile
+qtermwidget/*_autogen/
+qtermwidget/lib/qtermwidget_version.h
+qtermwidget/lib/qtermwidget_export.h
+
+# Generated MOC files
+qtermwidget/lib/moc_*.cpp
+qtermwidget/lib/moc_*.cpp_parameters
+
+# Compiled translation files
+qtermwidget/*.qm
+
+# Compiled libraries
+qtermwidget/*.so*
+qtermwidget/*.a
+qtermwidget/*.dylib
+
+# Generated UI files
+qtermwidget/ui_*.h
+
+# Generated pkg-config files
+qtermwidget/*.pc
+
+# If qtermwidget has its own build artifacts
+qtermwidget/*.user
+qtermwidget/*.log
+qtermwidget/*.tmp

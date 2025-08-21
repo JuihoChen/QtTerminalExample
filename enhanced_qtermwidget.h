@@ -13,13 +13,14 @@ class EnhancedQTermWidget : public QTermWidget {
 
 public:
     explicit EnhancedQTermWidget(QWidget *parent = nullptr);
-    void selectAll();
 
-private:
-    QWidget* m_terminalDisplay = nullptr;
+    void selectAll();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+
+private:
+    QWidget* m_terminalDisplay = nullptr;
 };
 
 #endif

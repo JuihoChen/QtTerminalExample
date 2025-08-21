@@ -41,6 +41,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QListWidget>
+#include <QClipboard>
 
 // Update the constructor to load connections:
 TerminalWindow::TerminalWindow(QWidget *parent) 
@@ -220,6 +221,15 @@ void TerminalWindow::closeCurrentTab()
     closeTab(tabWidget->currentIndex());
 }
 
+void TerminalWindow::copyClipboard()
+{
+        QTermWidget *terminal = getCurrentTerminal();
+        //if (terminal) terminal->copyClipboard();
+        QString text = terminal->selectedText(true);
+        if (!text.isEmpty()) QApplication::clipboard()->setText(text);
+
+}
+
 void TerminalWindow::selectAllText()
 {
     QTermWidget *terminal = getCurrentTerminal();
@@ -227,8 +237,6 @@ void TerminalWindow::selectAllText()
         // Send Ctrl+A to select all text (universal terminal shortcut)
         //terminal->sendText("\x01"); // Ctrl+A ASCII code
         qobject_cast<EnhancedQTermWidget*>(terminal)->selectAll();
-
-        qDebug() << "Selected text length:" << terminal->selectedText().length();
     }
 }
 
@@ -466,10 +474,7 @@ void TerminalWindow::setupMenus()
 
     // Edit menu
     QMenu *editMenu = menuBar->addMenu("&Edit");
-    editMenu->addAction("&Copy", this, [this]() {
-        QTermWidget *terminal = getCurrentTerminal();
-        if (terminal) terminal->copyClipboard();
-    }, QKeySequence::Copy);
+    editMenu->addAction("&Copy", this, &TerminalWindow::copyClipboard, QKeySequence::Copy);
     
     editMenu->addAction("&Paste", this, [this]() {
         QTermWidget *terminal = getCurrentTerminal();
@@ -1166,10 +1171,10 @@ void TerminalWindow::showContextMenu(const QPoint &pos)
 {
     QTermWidget *terminal = getCurrentTerminal();
     if (!terminal) return;
-    
+
     QMenu menu;
-    
-    menu.addAction("Copy", terminal, &QTermWidget::copyClipboard);
+
+    menu.addAction("Copy", this, &TerminalWindow::copyClipboard);
     menu.addAction("Paste", terminal, &QTermWidget::pasteClipboard);
     menu.addSeparator();
     menu.addAction("Select All", this, &TerminalWindow::selectAllText);
