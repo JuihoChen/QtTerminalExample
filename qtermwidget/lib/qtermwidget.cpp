@@ -653,7 +653,7 @@ int QTermWidget::screenLinesCount()
 
 void QTermWidget::setSelectionStart(int row, int column)
 {
-    m_impl->m_terminalDisplay->screenWindow()->setSelectionStart(column, row, true);
+    m_impl->m_terminalDisplay->screenWindow()->setSelectionStart(column, row, false);
 }
 
 void QTermWidget::setSelectionEnd(int row, int column)

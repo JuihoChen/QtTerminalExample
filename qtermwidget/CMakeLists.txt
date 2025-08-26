@@ -282,7 +282,7 @@ configure_file(
 
 configure_file(
     "${PROJECT_SOURCE_DIR}/lib/qtermwidget_version.h.in"
-    "${CMAKE_BINARY_DIR}/lib/qtermwidget_version.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/lib/qtermwidget_version.h"
     @ONLY
 )
 
