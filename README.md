@@ -1,6 +1,6 @@
 # Qt Terminal with SSH Connection Manager
 
-A modern Qt-based terminal emulator with built-in SSH connection management, inspired by mRemoteNG but focused on terminal connections. Features a split-pane interface with connection tree, detailed connection panel, and multi-tab terminal area.
+A modern Qt-based terminal emulator with built-in SSH connection management, featuring a split-pane interface with connection tree, detailed connection panel, and multi-tab terminal area.
 
 ![Qt Terminal Screenshot](screenshot.png)
 
@@ -49,7 +49,7 @@ The application features a modern three-panel layout:
 ## Connection Management
 
 ### Connection Organization
-Connections are organized into folders with distinctive emoji icons:
+Connections are organized into folders with distinctive icons:
 
 - **🏢 Production** - Live servers and production environments
 - **🔧 Development** - Development and staging servers  
@@ -70,7 +70,7 @@ Connection types are automatically detected and iconized:
 The bottom-left panel shows comprehensive connection information:
 - **Connection Name** - Display name with folder context
 - **Host Information** - Hostname/IP address and port
-- **Authentication** - Username and password status (shows "••••••••" if password saved)
+- **Authentication** - Username and password status (shows masked password if saved)
 - **Quick Actions** - Connect, Edit, and Delete buttons
 - **Real-time Updates** - Panel updates automatically when selecting different connections
 
@@ -363,23 +363,6 @@ chmod 700 ~/.config/QtTerminalExample/
 - Ensure sufficient disk space for transfers
 - Try manual SCP to test: `scp file user@host:/path/`
 
-### Display Issues
-
-**"Application shows blank or corrupted display"**
-```bash
-# Force X11 platform (application does this automatically)
-export QT_QPA_PLATFORM=xcb
-./QtTerminalExample
-
-# For Wayland users experiencing issues
-export QT_QPA_PLATFORM=wayland
-```
-
-**"Font size too small/large"**
-- Use `Ctrl++` and `Ctrl+-` to adjust font size
-- Or go to View → Font... for detailed font selection
-- Settings are automatically saved between sessions
-
 ## Development
 
 ### Project Structure
@@ -388,6 +371,7 @@ QtTerminalExample/
 ├── main.cpp                 # Application entry point with platform setup
 ├── terminalwindow.h/.cpp    # Main window with three-panel interface
 ├── connectiondialog.h/.cpp  # Connection add/edit dialog with password support
+├── enhanced_qtermwidget.h/.cpp # Enhanced terminal widget with improved selection
 ├── CMakeLists.txt           # CMake build configuration
 ├── QtTerminalExample.pro    # qmake project file (alternative)
 └── README.md               # This comprehensive documentation
@@ -396,6 +380,8 @@ QtTerminalExample/
 ### Key Classes
 - **TerminalWindow** - Main application window with split-pane interface
 - **ConnectionDialog** - Add/edit connection dialog with validation
+- **EnhancedQTermWidget** - Enhanced terminal widget with improved text selection
+- **TerminalPositionManager** - Coordinate conversion for terminal interactions
 - **SSHConnection** - Connection data structure with password support
 - **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
 
@@ -405,14 +391,6 @@ QtTerminalExample/
 - **Error Handling** - Comprehensive error handling throughout
 - **Validation** - Input validation and user feedback
 - **Security Focus** - Safe command construction and password handling
-
-### Contributing
-1. **Fork Repository** - Create your own fork for development
-2. **Feature Branches** - Use feature branches for new functionality
-3. **Code Standards** - Follow Qt coding conventions and C++ best practices
-4. **Testing** - Test on multiple Linux distributions
-5. **Documentation** - Update documentation for new features
-6. **Security Review** - Consider security implications, especially for password-related features
 
 ## Version History
 
@@ -442,26 +420,6 @@ QtTerminalExample/
 ### v0.1
 - ✅ **Terminal Foundation** - Basic qtermwidget integration
 
-## Roadmap
-
-### Short Term (v0.6)
-- **🔐 SSH Key Management** - Integration with SSH agent and key files
-- **📋 Connection Import/Export** - JSON, CSV, and other format support
-- **🔍 Quick Connect Bar** - Fast connection search and recent connections
-- **📈 Connection History** - Track and manage connection history
-
-### Medium Term (v0.7)
-- **🔒 Password Encryption** - Secure encrypted password storage using Qt's cryptographic functions
-- **🎨 Themes & Customization** - Application themes and enhanced UI customization
-- **📊 Connection Statistics** - Usage tracking and connection analytics
-- **🌐 Remote Tunneling** - SSH tunnel management and port forwarding
-
-### Long Term (v1.0)
-- **🔌 Plugin System** - Extensible plugin architecture for additional protocols
-- **📝 Session Scripting** - Automation and scripting capabilities
-- **📁 Remote File Manager** - Full-featured remote file management interface
-- **📹 Session Recording** - Terminal session recording and playback
-
 ## Security Best Practices
 
 ### Password Security
@@ -489,12 +447,6 @@ QtTerminalExample/
 - **Monitoring** - Monitor server logs for unauthorized access attempts
 - **Firewall Rules** - Implement proper firewall rules on servers
 
-### Development Security
-- **Code Review** - All password-related code should be reviewed
-- **Static Analysis** - Use static analysis tools for security scanning
-- **Dependency Updates** - Keep Qt and system libraries updated
-- **Secure Coding** - Follow secure coding practices for command execution
-
 ## Feature Comparison
 
 | Feature | Status | Description |
@@ -519,56 +471,6 @@ QtTerminalExample/
 | Connection History | 🚧 Planned | Recent connections and usage tracking |
 | Import/Export | 🚧 Planned | Configuration sharing and migration tools |
 
-## API Documentation
-
-### Core Classes
-
-**SSHConnection Structure:**
-```cpp
-struct SSHConnection {
-    QString name;        // Display name for connection
-    QString host;        // Hostname or IP address  
-    QString username;    // SSH username
-    QString password;    // SSH password (optional, stored in plain text)
-    int port;           // SSH port (default: 22)
-    QString folder;     // Organization folder name
-};
-```
-
-**Key Methods:**
-```cpp
-// Terminal creation
-QTermWidget* createSSHTerminal(const SSHConnection &connection);
-
-// Connection management  
-void loadConnections();
-void saveConnections();
-void addNewConnection();
-void editConnection(QTreeWidgetItem *item);
-
-// File operations
-void uploadFileToSSH(const SSHConnection &connection);
-void downloadFileFromSSH(const SSHConnection &connection);
-```
-
-## Community & Support
-
-### Getting Help
-- **GitHub Issues** - [Report bugs and request features](../../issues)
-- **GitHub Discussions** - [Ask questions and share ideas](../../discussions)
-- **Documentation** - Check this README and inline code comments
-- **Examples** - Review the default connections for usage examples
-
-### Contributing
-- **Bug Reports** - Use GitHub Issues with detailed reproduction steps
-- **Feature Requests** - Describe use cases and expected behavior
-- **Pull Requests** - Follow coding standards and include tests
-- **Documentation** - Help improve documentation and examples
-
-### Security
-- **Vulnerability Reports** - Report security issues privately via email
-- **Security Best Practices** - Follow the security guidelines in this README
-- **Code Review** - All security-related changes undergo thorough review
 
 ## Acknowledgments
 
@@ -577,7 +479,7 @@ void downloadFileFromSSH(const SSHConnection &connection);
 - **[mRemoteNG](https://mremoteng.org/)** - Inspiration for connection management UX
 - **[sshpass](https://sourceforge.net/projects/sshpass/)** - Password automation for SSH
 - **OpenSSH Community** - SSH protocol implementation and tools
-- **Linux Terminal Community** - Feedback, testing, and feature suggestions
+
 
 ## License
 
@@ -591,7 +493,5 @@ This project is licensed under the MIT License.
 Created with ❤️ for efficient Linux system administration and development workflows.
 
 ---
-
-**Current Status**: Active Development | **Version**: 0.5 | **Next Milestone**: SSH Key Management  
 
 *Streamline your SSH workflow with visual connection management* 🚀
