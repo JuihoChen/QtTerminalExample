@@ -6,6 +6,108 @@
 #include <QTimer>
 #include <QDebug>
 
+TerminalPositionManager::TerminalPositionManager(QTermWidget* terminal, QWidget* terminalDisplay)
+    : m_terminal(terminal)
+    , m_terminalDisplay(terminalDisplay ? terminalDisplay : terminal)
+    , m_scrollBar(nullptr)
+{
+    if (m_terminal) {
+        m_scrollBar = m_terminal->findChild<QScrollBar*>();
+    }
+}
+
+std::pair<int, int> TerminalPositionManager::getPositionFromPixels(int x, int y)
+{
+    if (!m_terminal) return std::make_pair(0, 0);
+    
+    int screenCols = m_terminal->screenColumnsCount();
+    int screenLines = m_terminal->screenLinesCount();
+    
+    if (screenCols <= 0 || screenLines <= 0) {
+        return std::make_pair(0, 0);
+    }
+    
+    std::pair<double, double> charDim = getCharacterDimensions();
+    double charWidth = charDim.first;
+    double charHeight = charDim.second;
+    
+    // Convert pixels to character grid coordinates
+    int col = static_cast<int>(x / charWidth);
+    int displayRow = static_cast<int>(y / charHeight);
+    
+    // Apply scroll compensation
+    int terminalRow = displayRow;
+    if (m_scrollBar) {
+        int scrollValue = m_scrollBar->value();
+        if (scrollValue == 0) {
+            terminalRow = displayRow;
+        } else {
+            terminalRow = displayRow + scrollValue;
+        }
+    }
+    
+    return std::make_pair(terminalRow, col);
+}
+
+QPoint TerminalPositionManager::getPixelsFromPosition(int row, int col)
+{
+    if (!m_terminal) return QPoint(0, 0);
+    
+    std::pair<double, double> charDim = getCharacterDimensions();
+    double charWidth = charDim.first;
+    double charHeight = charDim.second;
+    
+    // Convert terminal row to display row
+    int displayRow = row;
+    if (m_scrollBar) {
+        int scrollValue = m_scrollBar->value();
+        if (scrollValue == 0) {
+            displayRow = row;
+        } else {
+            displayRow = row - scrollValue;
+        }
+    }
+    
+    // Convert to pixel coordinates
+    int x = static_cast<int>((col + 0.5) * charWidth);
+    int y = static_cast<int>((displayRow + 0.5) * charHeight);
+    
+    return QPoint(x, y);
+}
+
+std::pair<double, double> TerminalPositionManager::getCharacterDimensions()
+{
+    // Get font metrics from the appropriate widget
+    QFont terminalFont = m_terminalDisplay->font();
+    QFontMetrics metrics(terminalFont);
+    
+    double charWidth = metrics.horizontalAdvance("M");
+    double charHeight = metrics.lineSpacing();
+    
+    // Fallback to widget-based calculation if font metrics are unreliable
+    int widgetWidth = m_terminalDisplay->width();
+    int widgetHeight = m_terminalDisplay->height();
+    
+    int screenCols = m_terminal->screenColumnsCount();
+    int screenLines = m_terminal->screenLinesCount();
+    
+    if (screenCols > 0 && screenLines > 0) {
+        double widgetBasedCharWidth = static_cast<double>(widgetWidth) / screenCols;
+        double widgetBasedCharHeight = static_cast<double>(widgetHeight) / screenLines;
+        
+        // Use widget-based calculation if font metrics seem off
+        if (charWidth <= 0 || charWidth > widgetBasedCharWidth * 2 || charWidth < widgetBasedCharWidth * 0.5) {
+            charWidth = widgetBasedCharWidth;
+        }
+        
+        if (charHeight <= 0 || charHeight > widgetBasedCharHeight * 2 || charHeight < widgetBasedCharHeight * 0.5) {
+            charHeight = widgetBasedCharHeight;
+        }
+    }
+    
+    return std::make_pair(charWidth, charHeight);
+}
+
 EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(parent) {
     // Initialize member variables
     m_hasActiveSelection = false;
@@ -334,126 +436,4 @@ void EnhancedQTermWidget::updateSelectionState() {
         m_selectionAnchorRow = 0;
         m_selectionAnchorCol = 0;
     }
-}
-
-// Enhanced position conversion that handles overflow and scroll properly
-std::pair<int, int> EnhancedQTermWidget::getPositionFromPixels(int x, int y) {
-    qDebug() << "getPositionFromPixelsWithOverflow: input (" << x << "," << y << ")";
-
-    int screenCols = screenColumnsCount();
-    int screenLines = screenLinesCount();
-
-    if (screenCols <= 0 || screenLines <= 0) {
-        qDebug() << "Invalid terminal dimensions";
-        return {0, 0};
-    }
-
-    // Get character dimensions
-    std::pair<double, double> charDim = getCharacterDimensions();
-    double charWidth = charDim.first;
-    double charHeight = charDim.second;
-
-    // Convert pixels to character grid coordinates
-    int col = static_cast<int>(x / charWidth);
-    int displayRow = static_cast<int>(y / charHeight);
-
-    // Use empirical correction based on observed pattern from your debug data
-    int terminalRow = displayRow;
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    if (scrollBar) {
-        int scrollValue = scrollBar->value();
-        int historyLines = historyLinesCount();
-        
-        // Based on your debug patterns:
-        // When scroll=0: displayRow should match terminal coordinates directly
-        // When scroll>0: we need to account for the scroll position differently
-        
-        if (scrollValue == 0) {
-            // At bottom: use display row directly
-            terminalRow = displayRow;
-        } else {
-            // When scrolled: your data shows the actual selection is higher than calculated
-            // Try: terminalRow = displayRow + scrollValue (back to original logic)
-            terminalRow = displayRow + scrollValue;
-        }
-        
-        qDebug() << "Scroll value: " << scrollValue << ", display row: " << displayRow 
-                 << " -> terminal row: " << terminalRow;
-    }
-
-    qDebug() << "Position with empirical correction: (" << terminalRow << "," << col << ")";
-    return {terminalRow, col};
-}
-
-// Also update the reverse conversion for consistency
-QPoint EnhancedQTermWidget::getPixelsFromPosition(int row, int col) {
-    qDebug() << "getPixelsFromPositionWithOverflow: input (" << row << "," << col << ")";
-    
-    int screenCols = screenColumnsCount();
-    int screenLines = screenLinesCount();
-    
-    if (screenCols <= 0 || screenLines <= 0) {
-        return QPoint(0, 0);
-    }
-    
-    std::pair<double, double> charDim = getCharacterDimensions();
-    int charWidth = charDim.first;
-    int charHeight = charDim.second;
-    
-    // Convert terminal row to display row
-    int displayRow = row;
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    if (scrollBar) {
-        int scrollValue = scrollBar->value();
-        
-        if (scrollValue == 0) {
-            displayRow = row;
-        } else {
-            displayRow = row - scrollValue;
-        }
-        
-        qDebug() << "Converting terminal row " << row << " with scroll " << scrollValue 
-                 << " -> display row " << displayRow;
-    }
-    
-    // Convert to pixel coordinates
-    int x = (int)((col + 0.5) * charWidth);
-    int y = (int)((displayRow + 0.5) * charHeight);
-    
-    qDebug() << "Position to pixels: (" << row << "," << col << ") -> display(" 
-             << displayRow << ") -> pixels(" << x << "," << y << ")";
-    return QPoint(x, y);
-}
-
-// Helper method to get reliable character dimensions
-std::pair<double, double> EnhancedQTermWidget::getCharacterDimensions() {
-    // Get font metrics from the appropriate widget
-    QFont terminalFont = m_terminalDisplay ? m_terminalDisplay->font() : font();
-    QFontMetrics metrics(terminalFont);
-    
-    double charWidth = metrics.horizontalAdvance("M");
-    double charHeight = metrics.lineSpacing();
-    
-    // Fallback to widget-based calculation if font metrics are unreliable
-    int widgetWidth = m_terminalDisplay ? m_terminalDisplay->width() : width();
-    int widgetHeight = m_terminalDisplay ? m_terminalDisplay->height() : height();
-    
-    int screenCols = screenColumnsCount();
-    int screenLines = screenLinesCount();
-    
-    if (screenCols > 0 && screenLines > 0) {
-        double widgetBasedCharWidth = (double)widgetWidth / screenCols;
-        double widgetBasedCharHeight = (double)widgetHeight / screenLines;
-        
-        // Use widget-based calculation if font metrics seem off
-        if (charWidth <= 0 || charWidth > widgetBasedCharWidth * 2 || charWidth < widgetBasedCharWidth * 0.5) {
-            charWidth = widgetBasedCharWidth;
-        }
-        
-        if (charHeight <= 0 || charHeight > widgetBasedCharHeight * 2 || charHeight < widgetBasedCharHeight * 0.5) {
-            charHeight = widgetBasedCharHeight;
-        }
-    }
-    
-    return {charWidth, charHeight};
 }
