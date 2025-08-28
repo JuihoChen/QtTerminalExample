@@ -75,35 +75,14 @@ QPoint TerminalPositionManager::getPixelsFromPosition(int row, int col)
     return QPoint(x, y);
 }
 
-std::pair<double, double> TerminalPositionManager::getCharacterDimensions()
-{
-    // Get font metrics from the appropriate widget
+std::pair<double, double> TerminalPositionManager::getCharacterDimensions() {
     QFont terminalFont = m_terminalDisplay->font();
     QFontMetrics metrics(terminalFont);
     
     double charWidth = metrics.horizontalAdvance("M");
-    double charHeight = metrics.lineSpacing();
-    
-    // Fallback to widget-based calculation if font metrics are unreliable
-    int widgetWidth = m_terminalDisplay->width();
-    int widgetHeight = m_terminalDisplay->height();
-    
-    int screenCols = m_terminal->screenColumnsCount();
-    int screenLines = m_terminal->screenLinesCount();
-    
-    if (screenCols > 0 && screenLines > 0) {
-        double widgetBasedCharWidth = static_cast<double>(widgetWidth) / screenCols;
-        double widgetBasedCharHeight = static_cast<double>(widgetHeight) / screenLines;
-        
-        // Use widget-based calculation if font metrics seem off
-        if (charWidth <= 0 || charWidth > widgetBasedCharWidth * 2 || charWidth < widgetBasedCharWidth * 0.5) {
-            charWidth = widgetBasedCharWidth;
-        }
-        
-        if (charHeight <= 0 || charHeight > widgetBasedCharHeight * 2 || charHeight < widgetBasedCharHeight * 0.5) {
-            charHeight = widgetBasedCharHeight;
-        }
-    }
+    // Use ascent + descent instead of lineSpacing to get actual character cell height
+    // lineSpacing includes extra spacing between lines which causes positioning drift during zoom
+    double charHeight = metrics.ascent() + metrics.descent();
     
     return std::make_pair(charWidth, charHeight);
 }
