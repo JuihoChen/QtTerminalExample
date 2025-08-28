@@ -269,15 +269,21 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
                     std::pair<int, int> clickPos = getPositionFromPixels(mouseEvent->pos().x(), mouseEvent->pos().y());
                     m_clickRow = clickPos.first;
                     m_clickCol = clickPos.second;
-                    
+
                     // Let the base widget handle normal click
                 }
             }
         }
         else if (event->type() == QEvent::MouseMove) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            
-            if (mouseEvent->buttons() & Qt::LeftButton && !m_isDragging) {
+
+            // Only start dragging if:
+            // 1. Left button is pressed
+            // 2. Not currently dragging
+            // 3. Shift key is NOT pressed (no shift+click operation)
+            if (mouseEvent->buttons() & Qt::LeftButton &&
+                !m_isDragging &&
+                !(mouseEvent->modifiers() & Qt::ShiftModifier)) {
                 m_isDragging = true;
                 qDebug() << "Drag selection started";
             }
@@ -285,12 +291,12 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
         }
         else if (event->type() == QEvent::MouseButtonRelease) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-    
+
             if (mouseEvent->button() == Qt::LeftButton) {
                 if (m_isDragging) {
                     // End of drag selection - Get the ACTUAL selection bounds
                     m_isDragging = false;
-            
+
                     // Wait for the selection to be processed, then get real bounds
                     QTimer::singleShot(5, this, [this]() {
                         try {
