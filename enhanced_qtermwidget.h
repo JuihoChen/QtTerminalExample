@@ -35,7 +35,7 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void handleShiftClick(QMouseEvent *mouseEvent);
-    void updateSelectionState();
+    void updateSelectionState(bool skipAnchorUpdate);
 
     // Only keep the method that's actually used
     std::pair<int, int> getPositionFromPixels(int x, int y) {

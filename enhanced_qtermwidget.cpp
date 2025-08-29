@@ -303,29 +303,49 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
                             int actualStartRow, actualStartCol, actualEndRow, actualEndCol;
                             getSelectionStart(actualStartRow, actualStartCol);
                             getSelectionEnd(actualEndRow, actualEndCol);
-                    
+
                             qDebug() << "ACTUAL selection after drag: start(" << actualStartRow << "," << actualStartCol 
                                      << ") end(" << actualEndRow << "," << actualEndCol << ")";
-                    
-                            // Set anchor to the ACTUAL start of selection, not the click position
-                            m_selectionAnchorRow = actualStartRow;
-                            m_selectionAnchorCol = actualStartCol;
-                    
-                            qDebug() << "Corrected anchor to ACTUAL start: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
-                    
+                            qDebug() << "Original click position: (" << m_clickRow << "," << m_clickCol << ")";
+
+                            // Determine drag direction by comparing click position with actual selection bounds
+                            // For downward drag: click position will be closer to the start (drag started there)
+                            // For upward drag: click position will be closer to the end (drag started there)
+
+                            // Calculate distance from click to start vs end
+                            int distToStart = abs((m_clickRow - actualStartRow) * 1000 + (m_clickCol - actualStartCol));
+                            int distToEnd = abs((m_clickRow - actualEndRow) * 1000 + (m_clickCol - actualEndCol));
+
+                            if (distToStart <= distToEnd) {
+                                // Click was closer to start - this was a downward drag
+                                // Anchor should be at START so shift+click can extend upward
+                                m_selectionAnchorRow = actualStartRow;
+                                m_selectionAnchorCol = actualStartCol;
+                                qDebug() << "Downward drag detected - anchor set to START: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
+                            } else {
+                                // Click was closer to end - this was an upward drag
+                                // Anchor should be at END so shift+click can extend downward
+                                m_selectionAnchorRow = actualEndRow;
+                                m_selectionAnchorCol = actualEndCol;
+                                qDebug() << "Upward drag detected - anchor set to END: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
+                            }
+
                         } catch (...) {
-                            qDebug() << "Could not get actual selection bounds, keeping click-based anchor";
-                            // Fallback: use the stored click position
+                            qDebug() << "Could not get actual selection bounds, using click-based anchor";
+                            // Fallback: use the stored click position as anchor
                             m_selectionAnchorRow = m_clickRow;
                             m_selectionAnchorCol = m_clickCol;
                         }
-                
-                        updateSelectionState();
+
+                        // Update selection state but skip anchor update since we just set it
+                        updateSelectionState(true); // true = skip anchor update
                     });
             
                 } else {
                     // Simple click - may clear selection
-                    QTimer::singleShot(0, this, &EnhancedQTermWidget::updateSelectionState);
+                    QTimer::singleShot(0, this, [this]() {
+                        updateSelectionState(false); // false = allow anchor update
+                    });
                 }
             }
         }
@@ -337,7 +357,7 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
 void EnhancedQTermWidget::handleShiftClick(QMouseEvent *mouseEvent) {
     qDebug() << "Shift+Click detected for selection extension";
     
-    // Get click position - handle overflow properly
+    // Get click position
     std::pair<int, int> clickPos = getPositionFromPixels(mouseEvent->pos().x(), mouseEvent->pos().y());
     int clickRow = clickPos.first;
     int clickCol = clickPos.second;
@@ -370,13 +390,31 @@ void EnhancedQTermWidget::handleShiftClick(QMouseEvent *mouseEvent) {
         newEndCol = m_selectionAnchorCol;
     }
 
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    if (scrollBar) {
-        int scrollValue = scrollBar->value();
-        qDebug() << "Adjusting for scroll value:" << scrollValue;
-        // Adjust rows based on scroll position
-        newStartRow -= scrollValue;
-        newEndRow -= scrollValue;
+// Apply coordinate system adjustments for modified setSelection functions
+    //
+    // Background: We have asymmetric coordinate handling due to selective modifications:
+    // - setSelectionStart() was modified to call ScreenWindow::setSelectionStart() 
+    //   which applies scroll offset internally: qMin(line + currentLine(), endWindowLine())
+    // - setSelectionEnd() kept original implementation (no scroll handling)
+    //
+    // Therefore:
+    // - setSelectionStart() expects display coordinates (will add scroll internally)
+    // - setSelectionEnd() expects terminal coordinates (no scroll adjustment)
+
+    bool applyScrollAdjustment = true;  // Set to false to disable scroll compensation
+
+    if (applyScrollAdjustment) {
+        QScrollBar* scrollBar = findChild<QScrollBar*>();
+        if (scrollBar) {
+            int scrollValue = scrollBar->value();
+            qDebug() << "Applying scroll adjustment:" << scrollValue;
+
+            // Only adjust start row since setSelectionStart() expects display coordinates
+            newStartRow -= scrollValue;
+
+            // Don't adjust end row since setSelectionEnd() expects terminal coordinates
+            // newEndRow -= scrollValue;  // Commented out - causes double adjustment
+        }
     }
 
     qDebug() << "Extending from anchor to click: start(" << newStartRow << "," << newStartCol 
@@ -390,31 +428,37 @@ void EnhancedQTermWidget::handleShiftClick(QMouseEvent *mouseEvent) {
     if (!extendedSelection.isEmpty()) {
         qDebug() << "Selection extension successful! New length:" << extendedSelection.length();
         m_hasActiveSelection = true;
+        // Don't update anchor here - it should remain at the original anchor point
     } else {
         qDebug() << "Selection extension failed";
     }
 }
 
-void EnhancedQTermWidget::updateSelectionState() {
+void EnhancedQTermWidget::updateSelectionState(bool skipAnchorUpdate) {
     QString currentSelection = selectedText(true);
     bool hadSelection = m_hasActiveSelection;
     m_hasActiveSelection = !currentSelection.isEmpty();
     
     if (m_hasActiveSelection && !hadSelection) {
         qDebug() << "New selection detected, length:" << currentSelection.length();
-        // Update anchor to current selection start for shift+click
-        try {
-            int startRow, startCol, endRow, endCol;
-            getSelectionStart(startRow, startCol);
-            getSelectionEnd(endRow, endCol);
-            
-            // Set anchor to start of selection
-            m_selectionAnchorRow = startRow;
-            m_selectionAnchorCol = startCol;
-            
-            qDebug() << "Updated selection anchor to (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
-        } catch (...) {
-            qDebug() << "Could not update selection anchor";
+
+        // Only update anchor if we're not skipping it (i.e., for non-drag selections)
+        if (!skipAnchorUpdate) {
+            try {
+                int startRow, startCol, endRow, endCol;
+                getSelectionStart(startRow, startCol);
+                getSelectionEnd(endRow, endCol);
+
+                // For non-drag selections, anchor at start
+                m_selectionAnchorRow = startRow;
+                m_selectionAnchorCol = startCol;
+
+                qDebug() << "Updated selection anchor to START: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
+            } catch (...) {
+                qDebug() << "Could not update selection anchor";
+            }
+        } else {
+            qDebug() << "Skipped anchor update (drag selection)";
         }
     } else if (!m_hasActiveSelection && hadSelection) {
         qDebug() << "Selection cleared";

@@ -658,7 +658,7 @@ void QTermWidget::setSelectionStart(int row, int column)
 
 void QTermWidget::setSelectionEnd(int row, int column)
 {
-    m_impl->m_terminalDisplay->screenWindow()->setSelectionEnd(column, row);
+    m_impl->m_terminalDisplay->screenWindow()->screen()->setSelectionEnd(column, row);
 }
 
 void QTermWidget::getSelectionStart(int& row, int& column)
