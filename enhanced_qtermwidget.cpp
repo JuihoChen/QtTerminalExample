@@ -142,57 +142,32 @@ EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(parent) 
 }
 
 void EnhancedQTermWidget::selectAll() {
-    // Get scroll bar reference
-    QScrollBar* scrollBar = findChild<QScrollBar*>();
-    int originalValue = 0;
-    bool needsScrollRestore = false;
-
-    if (scrollBar) {
-        originalValue = scrollBar->value();
-        needsScrollRestore = (originalValue != scrollBar->maximum());
-        qDebug() << "Original scroll position:" << originalValue << "max:" << scrollBar->maximum();
-    }
-
-    // Minimal anti-flicker - only disable terminal display updates
-    if (needsScrollRestore && m_terminalDisplay) {
-        m_terminalDisplay->setUpdatesEnabled(false);
-
-        // Scroll to bottom for proper selection
-        scrollBar->setValue(scrollBar->maximum());
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        qDebug() << "Silently scrolled to bottom, new position:" << scrollBar->value();
-    }
-
     // Get terminal dimensions
     int screenLines = screenLinesCount();
     int screenColumns = screenColumnsCount();
-    int historyLines = historyLinesCount();
 
     if (screenLines <= 0 || screenColumns <= 0) {
         qDebug() << "Invalid terminal dimensions";
-        // Re-enable updates before returning
-        if (needsScrollRestore && m_terminalDisplay) {
-            m_terminalDisplay->setUpdatesEnabled(true);
-        }
         return;
     }
 
-    qDebug() << "Dimensions - Screen:" << screenLines << "x" << screenColumns 
-             << "History:" << historyLines;
-
-    // Calculate coordinates explicitly for different coordinate systems
+    // Get actual scrollable content
+    QScrollBar* scrollBar = findChild<QScrollBar*>();
+    int scrollValue = scrollBar ? scrollBar->value() : 0;
     int scrollableLines = scrollBar ? scrollBar->maximum() : 0;
 
+    qDebug() << "Dimensions - Screen:" << screenLines << "x" << screenColumns 
+             << "Scrollable:" << scrollableLines;
+
+    // Calculate coordinates explicitly for different coordinate systems
     // For ScreenWindow::setSelectionStart - uses display coordinates (will be adjusted internally)
-    int displayStartRow = scrollableLines > 0 ? -scrollableLines : 0;
+    int displayStartRow = scrollValue > 0 ? -scrollValue : 0;
 
     // For Screen::setSelectionEnd - uses buffer coordinates (no internal adjustment)
     int bufferEndRow = screenLines + scrollableLines - 1;
 
-    qDebug() << "Coordinate system fix:";
-    qDebug() << "  Display start row (for setSelectionStart):" << displayStartRow;
-    qDebug() << "  Buffer end row (for setSelectionEnd):" << bufferEndRow;
-    qDebug() << "Setting selection from (" << displayStartRow << ",0) to (" << bufferEndRow << "," << (screenColumns-1) << ")";
+    qDebug() << "Setting selection from display(" << displayStartRow << ", 0 ) to buffer(" 
+             << bufferEndRow << "," << (screenColumns-1) << ")";
 
     setSelectionStart(displayStartRow, 0);
     setSelectionEnd(bufferEndRow, screenColumns - 1);
@@ -202,16 +177,6 @@ void EnhancedQTermWidget::selectAll() {
 
     QString selectedText = this->selectedText(true);
     qDebug() << "Selection result - length:" << selectedText.length();
-
-    // Restore scroll position and re-enable updates
-    if (needsScrollRestore && scrollBar && m_terminalDisplay) {
-        scrollBar->setValue(originalValue);
-
-        m_terminalDisplay->setUpdatesEnabled(true);
-        m_terminalDisplay->update();
-
-        qDebug() << "Restored scroll position to:" << scrollBar->value();
-    }
 
     if (selectedText.length() > 0) {
         qDebug() << "Selection successful! Length:" << selectedText.length();
@@ -223,7 +188,7 @@ void EnhancedQTermWidget::selectAll() {
         m_selectionAnchorRow = displayStartRow;
         m_selectionAnchorCol = 0;
     } else {
-        qDebug() << "ERROR: Selection failed even after scrolling to bottom!";
+        qDebug() << "ERROR: Selection failed!";
     }
 }
 
