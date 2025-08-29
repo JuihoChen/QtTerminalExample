@@ -19,33 +19,32 @@ TerminalPositionManager::TerminalPositionManager(QTermWidget* terminal, QWidget*
 std::pair<int, int> TerminalPositionManager::getPositionFromPixels(int x, int y)
 {
     if (!m_terminal) return std::make_pair(0, 0);
-    
+
     int screenCols = m_terminal->screenColumnsCount();
     int screenLines = m_terminal->screenLinesCount();
-    
+
     if (screenCols <= 0 || screenLines <= 0) {
         return std::make_pair(0, 0);
     }
-    
+
     std::pair<double, double> charDim = getCharacterDimensions();
     double charWidth = charDim.first;
     double charHeight = charDim.second;
-    
+
     // Convert pixels to character grid coordinates
     int col = static_cast<int>(x / charWidth);
     int displayRow = static_cast<int>(y / charHeight);
-    
+
+    col = qBound(0, col, screenCols - 1);
+    displayRow = qBound(0, displayRow, screenLines - 1);
+
     // Apply scroll compensation
     int terminalRow = displayRow;
     if (m_scrollBar) {
         int scrollValue = m_scrollBar->value();
-        if (scrollValue == 0) {
-            terminalRow = displayRow;
-        } else {
-            terminalRow = displayRow + scrollValue;
-        }
+        terminalRow = displayRow + scrollValue;
     }
-    
+
     return std::make_pair(terminalRow, col);
 }
 
@@ -61,11 +60,7 @@ QPoint TerminalPositionManager::getPixelsFromPosition(int row, int col)
     int displayRow = row;
     if (m_scrollBar) {
         int scrollValue = m_scrollBar->value();
-        if (scrollValue == 0) {
-            displayRow = row;
-        } else {
-            displayRow = row - scrollValue;
-        }
+        displayRow = row - scrollValue;
     }
     
     // Convert to pixel coordinates
