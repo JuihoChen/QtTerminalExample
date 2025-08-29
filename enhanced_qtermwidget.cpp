@@ -180,13 +180,22 @@ void EnhancedQTermWidget::selectAll() {
     qDebug() << "Dimensions - Screen:" << screenLines << "x" << screenColumns 
              << "History:" << historyLines;
 
-    int startRow = historyLines > 0 ? -historyLines : 0;
-    int endRow = screenLines - 1;
+    // Calculate coordinates explicitly for different coordinate systems
+    int scrollableLines = scrollBar ? scrollBar->maximum() : 0;
 
-    qDebug() << "Setting selection from (" << startRow << ",0) to (" << endRow << "," << (screenColumns-1) << ")";
+    // For ScreenWindow::setSelectionStart - uses display coordinates (will be adjusted internally)
+    int displayStartRow = scrollableLines > 0 ? -scrollableLines : 0;
 
-    setSelectionStart(startRow, 0);
-    setSelectionEnd(endRow, screenColumns - 1);
+    // For Screen::setSelectionEnd - uses buffer coordinates (no internal adjustment)
+    int bufferEndRow = screenLines + scrollableLines - 1;
+
+    qDebug() << "Coordinate system fix:";
+    qDebug() << "  Display start row (for setSelectionStart):" << displayStartRow;
+    qDebug() << "  Buffer end row (for setSelectionEnd):" << bufferEndRow;
+    qDebug() << "Setting selection from (" << displayStartRow << ",0) to (" << bufferEndRow << "," << (screenColumns-1) << ")";
+
+    setSelectionStart(displayStartRow, 0);
+    setSelectionEnd(bufferEndRow, screenColumns - 1);
 
     // Process selection events
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
@@ -210,7 +219,8 @@ void EnhancedQTermWidget::selectAll() {
         // Update selection state after selectAll
         m_hasActiveSelection = true;
         // Set anchor to start of selection for future shift-clicks
-        m_selectionAnchorRow = startRow;
+        // Use the display coordinate for consistency with selection tracking
+        m_selectionAnchorRow = displayStartRow;
         m_selectionAnchorCol = 0;
     } else {
         qDebug() << "ERROR: Selection failed even after scrolling to bottom!";
