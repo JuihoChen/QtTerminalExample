@@ -297,55 +297,53 @@ bool EnhancedQTermWidget::eventFilter(QObject *obj, QEvent *event) {
                     // End of drag selection - Get the ACTUAL selection bounds
                     m_isDragging = false;
 
-                    // Wait for the selection to be processed, then get real bounds
-                    QTimer::singleShot(5, this, [this]() {
-                        try {
-                            int actualStartRow, actualStartCol, actualEndRow, actualEndCol;
-                            getSelectionStart(actualStartRow, actualStartCol);
-                            getSelectionEnd(actualEndRow, actualEndCol);
+                    // Force immediate processing of selection events
+                    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
-                            qDebug() << "ACTUAL selection after drag: start(" << actualStartRow << "," << actualStartCol 
-                                     << ") end(" << actualEndRow << "," << actualEndCol << ")";
-                            qDebug() << "Original click position: (" << m_clickRow << "," << m_clickCol << ")";
+                    // Now get bounds immediately - no timer needed
+                    try {
+                        int actualStartRow, actualStartCol, actualEndRow, actualEndCol;
+                        getSelectionStart(actualStartRow, actualStartCol);
+                        getSelectionEnd(actualEndRow, actualEndCol);
 
-                            // Determine drag direction by comparing click position with actual selection bounds
-                            // For downward drag: click position will be closer to the start (drag started there)
-                            // For upward drag: click position will be closer to the end (drag started there)
+                        qDebug() << "ACTUAL selection after drag: start(" << actualStartRow << "," << actualStartCol 
+                                 << ") end(" << actualEndRow << "," << actualEndCol << ")";
+                        qDebug() << "Original click position: (" << m_clickRow << "," << m_clickCol << ")";
 
-                            // Calculate distance from click to start vs end
-                            int distToStart = abs((m_clickRow - actualStartRow) * 1000 + (m_clickCol - actualStartCol));
-                            int distToEnd = abs((m_clickRow - actualEndRow) * 1000 + (m_clickCol - actualEndCol));
+                        // Determine drag direction by comparing click position with actual selection bounds
+                        // For downward drag: click position will be closer to the start (drag started there)
+                        // For upward drag: click position will be closer to the end (drag started there)
 
-                            if (distToStart <= distToEnd) {
-                                // Click was closer to start - this was a downward drag
-                                // Anchor should be at START so shift+click can extend upward
-                                m_selectionAnchorRow = actualStartRow;
-                                m_selectionAnchorCol = actualStartCol;
-                                qDebug() << "Downward drag detected - anchor set to START: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
-                            } else {
-                                // Click was closer to end - this was an upward drag
-                                // Anchor should be at END so shift+click can extend downward
-                                m_selectionAnchorRow = actualEndRow;
-                                m_selectionAnchorCol = actualEndCol;
-                                qDebug() << "Upward drag detected - anchor set to END: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
-                            }
+                        // Calculate distance from click to start vs end
+                        int distToStart = abs((m_clickRow - actualStartRow) * 10000 + (m_clickCol - actualStartCol));
+                        int distToEnd = abs((m_clickRow - actualEndRow) * 10000 + (m_clickCol - actualEndCol));
 
-                        } catch (...) {
-                            qDebug() << "Could not get actual selection bounds, using click-based anchor";
-                            // Fallback: use the stored click position as anchor
-                            m_selectionAnchorRow = m_clickRow;
-                            m_selectionAnchorCol = m_clickCol;
+                        if (distToStart <= distToEnd) {
+                            // Click was closer to start - this was a downward drag
+                            // Anchor should be at START so shift+click can extend upward
+                            m_selectionAnchorRow = actualStartRow;
+                            m_selectionAnchorCol = actualStartCol;
+                            qDebug() << "Downward drag detected - anchor set to START: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
+                        } else {
+                            // Click was closer to end - this was an upward drag
+                            // Anchor should be at END so shift+click can extend downward
+                            m_selectionAnchorRow = actualEndRow;
+                            m_selectionAnchorCol = actualEndCol;
+                            qDebug() << "Upward drag detected - anchor set to END: (" << m_selectionAnchorRow << "," << m_selectionAnchorCol << ")";
                         }
 
-                        // Update selection state but skip anchor update since we just set it
-                        updateSelectionState(true); // true = skip anchor update
-                    });
-            
+                        updateSelectionState(true); // Skip anchor update since we just set it
+
+                    } catch (...) {
+                        qDebug() << "Could not get actual selection bounds, using click-based anchor";
+                        // Fallback: use the stored click position as anchor
+                        m_selectionAnchorRow = m_clickRow;
+                        m_selectionAnchorCol = m_clickCol;
+                        updateSelectionState(false);
+                    }
                 } else {
                     // Simple click - may clear selection
-                    QTimer::singleShot(0, this, [this]() {
-                        updateSelectionState(false); // false = allow anchor update
-                    });
+                    updateSelectionState(false);
                 }
             }
         }
