@@ -2,6 +2,7 @@
 #include "terminalwindow.h"
 #include "connectiondialog.h"
 #include "enhanced_qtermwidget.h"
+#include "AboutDialog.h"
 
 #include <QApplication>
 #include <QWidget>
@@ -505,6 +506,18 @@ void TerminalWindow::setupMenus()
     connectionsMenu->addAction("&Refresh", this, [this]() {
         loadConnections();
     }, QKeySequence::Refresh);
+
+    // Help menu
+    QMenu* helpMenu = menuBar->addMenu("&Help");
+    QAction* aboutAction = new QAction("&About", this);
+    aboutAction->setStatusTip("Show application information");
+    connect(aboutAction, &QAction::triggered, this, &TerminalWindow::showAbout);
+    helpMenu->addAction(aboutAction);
+}
+
+void TerminalWindow::showAbout() {
+    AboutDialog dialog(this);
+    dialog.exec();
 }
 
 // Update setupConnectionTree() method:

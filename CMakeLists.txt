@@ -20,6 +20,7 @@ add_executable(QtTerminalExample
     terminalwindow.cpp
     connectiondialog.cpp
     enhanced_qtermwidget.cpp
+    AboutDialog.cpp
 )
 
 if(USE_STATIC_QTERMWIDGET)

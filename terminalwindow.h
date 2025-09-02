@@ -65,6 +65,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
+    void showAbout();
     void openFontDialog();
     void changeColorScheme();
     void increaseFont();
