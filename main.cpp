@@ -17,6 +17,14 @@ int main(int argc, char *argv[])
 
     app.setWindowIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
 
+    // Configure color schemes globally for all QTermWidget instances
+    // Create a temporary widget to configure global settings
+    {
+        QTermWidget temp_widget;
+        temp_widget.addCustomColorSchemeDir("/usr/share/qtermwidget5/color-schemes");
+    } // temp_widget destroyed, but ColorSchemeManager retains the paths
+
+
     TerminalWindow window;
     window.show();
 
