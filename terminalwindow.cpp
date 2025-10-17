@@ -1,7 +1,11 @@
 // ============ Updated terminalwindow.cpp with Split Left Pane ============
 #include "terminalwindow.h"
+#include "gripsplitter.h"
 #include "connectiondialog.h"
 #include "enhanced_qtermwidget.h"
+#include "commandsafety.h"
+#include "ssherrorhandler.h"
+#include "connectionvalidator.h"
 #include "AboutDialog.h"
 
 #include <QApplication>
