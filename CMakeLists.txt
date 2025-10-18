@@ -18,6 +18,14 @@ option(USE_STATIC_QTERMWIDGET "Use static QTermWidget with fixes" ON)
 add_executable(QtTerminalExample
     main.cpp
     terminalwindow.cpp
+    terminalwindow_ui.cpp
+    terminalwindow_terminal.cpp
+    terminalwindow_appearance.cpp
+    terminalwindow_connections.cpp
+    terminalwindow_ssh.cpp
+    terminalwindow_filetransfer.cpp
+    terminalwindow_filebrowser.cpp
+    terminalwindow_menus.cpp
     connectiondialog.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
