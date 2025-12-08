@@ -3,19 +3,12 @@
 #define TERMINALWINDOW_H
 
 #include <QMainWindow>
-#include <QTabWidget>
 #include <QTreeWidget>
 #include <QSplitter>
 #include <QGroupBox>
-#include <QFormLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <qtermwidget.h>
 #include <QProgressDialog>
-#include <QProcess>
-#include <QUuid>
 
+#include "qtermwidget.h"
 #include "sshconnection.h"
 
 QT_BEGIN_NAMESPACE
@@ -140,10 +133,10 @@ private:
     QPushButton *quickConnectButton;
     QPushButton *editConnectionButton;
     QPushButton *deleteConnectionButton;
-    
+
     // Store connections
     QList<SSHConnection> connections;
-    
+
     // Current selected connection for config panel
     SSHConnection selectedConnection;
     bool hasSelectedConnection;

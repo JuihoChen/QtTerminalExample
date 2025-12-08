@@ -3,6 +3,8 @@
 
 #include <QTreeWidgetItem>
 #include <QStatusBar>
+#include <QPushButton>
+#include <QLabel>
 
 // Updated double-click handler for actual SSH connection
 void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column)
