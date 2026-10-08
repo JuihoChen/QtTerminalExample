@@ -119,11 +119,13 @@ Right-click on SSH terminal tabs to access:
 ## Requirements
 
 ### System Requirements
-- **Qt 5.12+** or **Qt 6.x**
-- **qtermwidget5** library
-- **Linux/Unix** system (tested on Ubuntu 20.04+, Debian 11+)
+- **Qt 5.12+** (Qt 6 is not supported; the build looks for Qt 5 only)
+- **lxqt-build-tools 0.9+** and **Qt 5 Linguist tools**, needed to build the bundled qtermwidget
+- **Linux/Unix** system (build verified on Ubuntu 24.04; lxqt-build-tools 0.9+ means Ubuntu 22.04+ or Debian 12+)
 - **C++11** compatible compiler (GCC 7+ or Clang 7+)
-- **CMake 3.10+** or **qmake**
+- **CMake 3.10+**
+
+qtermwidget is bundled in the `qtermwidget/` folder and built together with the app, so you don't need a system qtermwidget package.
 
 ### Runtime Dependencies  
 - **OpenSSH client** - For SSH connections (`openssh-client` package)
@@ -137,59 +139,68 @@ Right-click on SSH terminal tabs to access:
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install qtbase5-dev qtermwidget5-dev build-essential cmake \
+sudo apt install build-essential cmake qtbase5-dev qttools5-dev lxqt-build-tools \
                  openssh-client sshpass iputils-ping
 ```
 
 **Fedora/RHEL:**
 ```bash
-sudo dnf install qt5-qtbase-devel qtermwidget-qt5-devel gcc-c++ make cmake \
+sudo dnf install qt5-qtbase-devel qt5-linguist lxqt-build-tools gcc-c++ make cmake \
                  openssh-clients sshpass iputils
 ```
 
 **Arch Linux:**
 ```bash
-sudo pacman -S qt5-base qtermwidget cmake openssh sshpass iputils
+sudo pacman -S qt5-base qt5-tools lxqt-build-tools cmake openssh sshpass iputils
 ```
 
 ### Build Application
 
-**With CMake (Recommended):**
 ```bash
-git clone https://github.com/yourusername/QtTerminalExample.git
+git clone https://github.com/JuihoChen/QtTerminalExample.git
 cd QtTerminalExample
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-**With qmake (Alternative):**
-```bash
-git clone https://github.com/yourusername/QtTerminalExample.git
-cd QtTerminalExample
-qmake
-make -j$(nproc)
-```
+The build must happen in a separate `build` folder; the bundled qtermwidget refuses in-source builds. The build also copies the terminal color schemes into `build/color-schemes/`, next to the program, so you don't need to run `make install`.
 
 ### Run Application
+From the `build` folder:
 ```bash
 ./QtTerminalExample
 ```
 
-### Desktop Integration (Optional)
+### Desktop Shortcut (Optional)
+Run this from the `build` folder after building. It adds "Qt Terminal SSH Manager" to your app menu with a network/server icon, so it stands apart from the regular terminal, and puts a launcher on your desktop:
 ```bash
-# Create desktop entry
+BIN="$PWD/QtTerminalExample"
 mkdir -p ~/.local/share/applications
 cat > ~/.local/share/applications/qt-terminal.desktop << EOF
 [Desktop Entry]
 Name=Qt Terminal SSH Manager
 Comment=Terminal with SSH Connection Management
-Exec=/path/to/QtTerminalExample
-Icon=terminal
+Exec=$BIN
+Path=$(dirname "$BIN")
+Icon=network-server
 Type=Application
+Terminal=false
 Categories=System;TerminalEmulator;
+StartupWMClass=QtTerminal
 EOF
+chmod +x ~/.local/share/applications/qt-terminal.desktop
+update-desktop-database ~/.local/share/applications 2>/dev/null
+
+# Optional: desktop icon (GNOME/Ubuntu)
+cp ~/.local/share/applications/qt-terminal.desktop ~/Desktop/
+gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 ```
+
+- Then search for "Qt Terminal" in the app menu. If the desktop icon shows a warning, right-click it and choose **Allow Launching**.
+- `StartupWMClass=QtTerminal` matches the app's window class, so the dock groups the running window with the launcher instead of showing a second, generic icon. If you pinned an older launcher, unpin it and pin the app again from the menu.
+- Other built-in icon names you can use instead of `network-server`: `network-workgroup`, `preferences-system-network`, `utilities-system-monitor`.
+- If you move or rebuild the project in a different folder, run the commands again so `Exec` points at the new location.
 
 ## Usage Guide
 
@@ -300,23 +311,22 @@ All SSH connections use optimized settings:
 
 ### Installation Issues
 
-**"qtermwidget not found during build"**
+**CMake can't find `lxqt-build-tools` or `Qt5LinguistTools`**
 ```bash
-# Ubuntu/Debian - install development package
-sudo apt install qtermwidget5-dev
-
-# Find installation location
-find /usr -name "qtermwidget*.h" 2>/dev/null
+# Ubuntu/Debian - both are needed by the bundled qtermwidget
+sudo apt install lxqt-build-tools qttools5-dev
 ```
+lxqt-build-tools must be version 0.9 or newer. Ubuntu 20.04 ships an older one, so use Ubuntu 22.04+ or build lxqt-build-tools from source.
 
-**"CMake configuration failed"**
+**CMake can't find `Qt5`**
 ```bash
-# Ensure Qt development tools are installed
-sudo apt install qt5-qmake qtbase5-dev-tools
-
-# For Qt6, use:
-sudo apt install qt6-base-dev qt6-tools-dev
+sudo apt install qtbase5-dev
 ```
+Qt 6 alone is not enough; the project builds against Qt 5.
+
+**"Cannot find color-schemes in any location!" / terminal is black on white**
+
+The `build/color-schemes/` folder next to the program is missing. Run `make` again to copy it, and start the program from the `build` folder (or through the desktop shortcut above).
 
 ### Runtime Issues
 
@@ -373,7 +383,7 @@ QtTerminalExample/
 ├── connectiondialog.h/.cpp  # Connection add/edit dialog with password support
 ├── enhanced_qtermwidget.h/.cpp # Enhanced terminal widget with improved selection
 ├── CMakeLists.txt           # CMake build configuration
-├── QtTerminalExample.pro    # qmake project file (alternative)
+├── qtermwidget/             # Bundled qtermwidget library (built with the app)
 └── README.md               # This comprehensive documentation
 ```
 
