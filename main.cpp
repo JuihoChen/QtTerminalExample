@@ -17,12 +17,12 @@ int main(int argc, char *argv[])
 
     app.setWindowIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
 
-    // Configure color schemes globally for all QTermWidget instances
-    // Create a temporary widget to configure global settings
-    {
-        QTermWidget temp_widget;
-        temp_widget.addCustomColorSchemeDir("/usr/share/qtermwidget5/color-schemes");
-    } // temp_widget destroyed, but ColorSchemeManager retains the paths
+    // Configure color schemes globally for all QTermWidget instances.
+    // The color-schemes folder next to the executable is copied there by
+    // CMake at build time, so schemes load without installing qtermwidget.
+    // The system path is kept as a fallback for packaged qtermwidget.
+    QTermWidget::addCustomColorSchemeDir(QCoreApplication::applicationDirPath() + "/color-schemes");
+    QTermWidget::addCustomColorSchemeDir("/usr/share/qtermwidget5/color-schemes");
 
 
     TerminalWindow window;
