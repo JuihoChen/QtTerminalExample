@@ -80,6 +80,18 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(QtTerminalExample PRIVATE dl util)
 endif()
 
+# The embedded qtermwidget only looks for color schemes in its install path,
+# which stays empty until "make install" is run. Copy the bundled schemes next
+# to the executable after each build; main.cpp adds that folder as a search path.
+if(USE_STATIC_QTERMWIDGET)
+    add_custom_command(TARGET QtTerminalExample POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/qtermwidget/lib/color-schemes"
+            "$<TARGET_FILE_DIR:QtTerminalExample>/color-schemes"
+        COMMENT "Copying qtermwidget color schemes next to the executable"
+    )
+endif()
+
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Using QTermWidget library: ${QTERMWIDGET_LIBRARY}")
 if(USE_STATIC_QTERMWIDGET)
