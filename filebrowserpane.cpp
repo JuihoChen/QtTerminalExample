@@ -4,33 +4,58 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCryptographicHash>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFileSystemModel>
+#include <QFileSystemWatcher>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QProcess>
 #include <QProgressBar>
+#include <QSettings>
 #include <QSplitter>
 #include <QStyle>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
 
 // A request that shows no progress for this long is cut off
 const int kStallSeconds = 30;
+
+const char *const kEditorSetting = "fileBrowser/editor";
+
+QString joinRemotePath(const QString &dir, const QString &name)
+{
+    return dir.endsWith('/') ? dir + name : dir + '/' + name;
+}
+
+// Null when the file can't be read (an editor may be halfway through saving)
+QByteArray fileHash(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return QByteArray();
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    if (!hash.addData(&file)) return QByteArray();
+    return hash.result();
+}
 
 QToolButton *makeToolButton(QWidget *parent, QStyle::StandardPixmap icon, const QString &tip)
 {
@@ -59,7 +84,15 @@ LocalDropView::LocalDropView(QWidget *parent)
 {
     setAcceptDrops(true);
     setDropIndicatorShown(true);
-    setDragDropMode(QAbstractItemView::DropOnly);
+    setDragEnabled(true);
+    setDragDropMode(QAbstractItemView::DragDrop);
+    setDefaultDropAction(Qt::CopyAction);
+}
+
+// Only ever offer a copy, so a file manager can't move (delete) local files
+void LocalDropView::startDrag(Qt::DropActions)
+{
+    QTreeView::startDrag(Qt::CopyAction);
 }
 
 bool LocalDropView::accepts(const QMimeData *data) const
@@ -107,13 +140,76 @@ void LocalDropView::dropEvent(QDropEvent *event)
     if (!entries.isEmpty() && !folder.isEmpty()) emit remoteEntriesDropped(entries, folder);
 }
 
+// ============ RemoteDropView ============
+
+RemoteDropView::RemoteDropView(QWidget *parent)
+    : QTreeView(parent)
+{
+    setAcceptDrops(true);
+    setDropIndicatorShown(true);
+    setDragEnabled(true);
+    setDragDropMode(QAbstractItemView::DragDrop);
+}
+
+QStringList RemoteDropView::localPaths(const QMimeData *data)
+{
+    QStringList paths;
+    if (data->hasFormat(REMOTE_ENTRIES_MIME)) return paths;  // Our own drag
+    for (const QUrl &url : data->urls()) {
+        if (url.isLocalFile()) paths << url.toLocalFile();
+    }
+    return paths;
+}
+
+QString RemoteDropView::dropFolder(const QPoint &pos) const
+{
+    QModelIndex index = indexAt(pos);
+    if (index.isValid()) {
+        RemoteEntry entry = model()->data(index, RemoteFileModel::EntryRole).value<RemoteEntry>();
+        if (entry.isDir) return entry.path;
+    }
+    auto *proxy = qobject_cast<QSortFilterProxyModel *>(model());
+    auto *remote = proxy ? qobject_cast<RemoteFileModel *>(proxy->sourceModel()) : nullptr;
+    return remote ? remote->path() : QString();
+}
+
+void RemoteDropView::dragEnterEvent(QDragEnterEvent *event)
+{
+    dragMoveEvent(event);
+}
+
+void RemoteDropView::dragMoveEvent(QDragMoveEvent *event)
+{
+    if (!localPaths(event->mimeData()).isEmpty() && !dropFolder(event->pos()).isEmpty()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else {
+        event->ignore();
+    }
+}
+
+void RemoteDropView::dropEvent(QDropEvent *event)
+{
+    QStringList paths = localPaths(event->mimeData());
+    QString folder = dropFolder(event->pos());
+    if (paths.isEmpty() || folder.isEmpty()) {
+        event->ignore();
+        return;
+    }
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    emit localFilesDropped(paths, folder);
+}
+
 // ============ FileBrowserPane ============
 
 FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *parent)
     : QWidget(parent), m_connection(connection),
       m_browseThread(new QThread(this)), m_browseWorker(new SftpWorker(connection)),
       m_transferThread(nullptr), m_transferWorker(nullptr),
-      m_connected(false), m_nextJobId(1)
+      m_connected(false), m_nextJobId(1),
+      m_editDir(nullptr), m_editWatcher(new QFileSystemWatcher(this)),
+      m_editTimer(new QTimer(this)), m_nextEditDir(1)
 {
     qRegisterMetaType<RemoteEntry>("RemoteEntry");
     qRegisterMetaType<QVector<RemoteEntry>>("QVector<RemoteEntry>");
@@ -142,6 +238,13 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
     watch(m_browseWorker, &m_browseWatchdog);
     m_browseThread->start();
 
+    // Editors often save in several steps (write a new file, then rename it
+    // over the old one), so wait a moment before reading the result
+    m_editTimer->setSingleShot(true);
+    m_editTimer->setInterval(500);
+    connect(m_editWatcher, &QFileSystemWatcher::fileChanged, this, [this]() { m_editTimer->start(); });
+    connect(m_editTimer, &QTimer::timeout, this, &FileBrowserPane::checkEditedFiles);
+
     setRemoteStatus(QString("Connecting to %1...").arg(m_connection.host));
     QMetaObject::invokeMethod(m_browseWorker, "connectToServer", Qt::QueuedConnection);
 }
@@ -166,6 +269,8 @@ FileBrowserPane::~FileBrowserPane()
         m_transferThread->wait();
         delete m_transferWorker;
     }
+
+    delete m_editDir;  // Removes the local copies of edited files
 }
 
 void FileBrowserPane::watch(SftpWorker *worker, Watchdog *watchdog)
@@ -187,7 +292,7 @@ void FileBrowserPane::watch(SftpWorker *worker, Watchdog *watchdog)
         watchdog->step = step;
         if (watchdog->timer->isActive()) watchdog->timer->start();
     });
-    connect(worker, &SftpWorker::downloadProgress, this, [watchdog]() {
+    connect(worker, &SftpWorker::transferProgress, this, [watchdog]() {
         if (watchdog->timer->isActive()) watchdog->timer->start();
     });
     connect(watchdog->timer, &QTimer::timeout, this, [worker, watchdog]() {
@@ -238,15 +343,13 @@ QWidget *FileBrowserPane::createRemoteSection()
     m_remoteProxy = new RemoteSortProxy(this);
     m_remoteProxy->setSourceModel(m_remoteModel);
 
-    m_remoteView = new QTreeView(section);
+    m_remoteView = new RemoteDropView(section);
     m_remoteView->setModel(m_remoteProxy);
     m_remoteView->setRootIsDecorated(false);
     m_remoteView->setUniformRowHeights(true);
     m_remoteView->setAlternatingRowColors(true);
     m_remoteView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_remoteView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_remoteView->setDragEnabled(true);
-    m_remoteView->setDragDropMode(QAbstractItemView::DragOnly);
     m_remoteView->setSortingEnabled(true);
     m_remoteView->sortByColumn(RemoteFileModel::NameColumn, Qt::AscendingOrder);
     m_remoteView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -275,6 +378,7 @@ QWidget *FileBrowserPane::createRemoteSection()
     });
     connect(m_remoteView, &QTreeView::customContextMenuRequested,
             this, &FileBrowserPane::showRemoteContextMenu);
+    connect(m_remoteView, &RemoteDropView::localFilesDropped, this, &FileBrowserPane::uploadPaths);
 
     QAction *upAction = new QAction(m_remoteView);
     upAction->setShortcut(Qt::Key_Backspace);
@@ -292,6 +396,15 @@ QWidget *FileBrowserPane::createRemoteSection()
     });
     m_remoteView->addAction(openAction);
 
+    QAction *editAction = new QAction(m_remoteView);
+    editAction->setShortcut(Qt::Key_F4);
+    editAction->setShortcutContext(Qt::WidgetShortcut);
+    connect(editAction, &QAction::triggered, this, [this]() {
+        QVector<RemoteEntry> entries = selectedRemoteEntries();
+        if (entries.size() == 1 && !entries.first().isDir) editRemoteFile(entries.first());
+    });
+    m_remoteView->addAction(editAction);
+
     return section;
 }
 
@@ -302,7 +415,7 @@ QWidget *FileBrowserPane::createLocalSection()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    layout->addWidget(makeSectionLabel("Local (drop remote files here to download)", section));
+    layout->addWidget(makeSectionLabel("Local (drag files between the lists to download or upload)", section));
 
     QHBoxLayout *bar = new QHBoxLayout;
     QToolButton *upButton = makeToolButton(section, QStyle::SP_FileDialogToParent, "Parent folder");
@@ -326,6 +439,8 @@ QWidget *FileBrowserPane::createLocalSection()
     m_localView->setItemsExpandable(false);
     m_localView->setUniformRowHeights(true);
     m_localView->setAlternatingRowColors(true);
+    m_localView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_localView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_localView->setSortingEnabled(true);
     m_localView->sortByColumn(0, Qt::AscendingOrder);
     m_localView->hideColumn(2);  // Type
@@ -349,6 +464,8 @@ QWidget *FileBrowserPane::createLocalSection()
         if (m_localModel->isDir(index)) setLocalFolder(m_localModel->filePath(index));
     });
     connect(m_localView, &LocalDropView::remoteEntriesDropped, this, &FileBrowserPane::downloadEntries);
+    connect(m_localView, &QTreeView::customContextMenuRequested,
+            this, &FileBrowserPane::showLocalContextMenu);
 
     setLocalFolder(QDir::homePath());
     return section;
@@ -501,11 +618,34 @@ void FileBrowserPane::showRemoteContextMenu(const QPoint &pos)
             menu.addAction(style()->standardIcon(QStyle::SP_DirOpenIcon), "Open", this,
                            [this, dir]() { navigateRemote(dir.path); });
         }
+        if (entries.size() == 1 && !entries.first().isDir) {
+            RemoteEntry file = entries.first();
+            QAction *edit = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogDetailedView),
+                                           "Edit", this, [this, file]() { editRemoteFile(file); });
+            edit->setShortcut(Qt::Key_F4);
+            menu.addAction("Edit With...", this, [this, file]() {
+                if (chooseEditor()) editRemoteFile(file);
+            });
+        }
         menu.addSeparator();
         menu.addAction("Copy Path", this, [entries]() {
             QStringList paths;
             for (const RemoteEntry &e : entries) paths << e.path;
             QApplication::clipboard()->setText(paths.join('\n'));
+        });
+    }
+    if (m_connected && !m_remoteModel->path().isEmpty()) {
+        QString remoteDir = m_remoteModel->path();
+        menu.addAction(style()->standardIcon(QStyle::SP_ArrowUp), "Upload Files...", this,
+                       [this, remoteDir]() {
+            QStringList files = QFileDialog::getOpenFileNames(
+                this, QString("Upload to %1").arg(remoteDir), localFolder());
+            uploadPaths(files, remoteDir);
+        });
+        menu.addAction("Upload Folder...", this, [this, remoteDir]() {
+            QString dir = QFileDialog::getExistingDirectory(
+                this, QString("Upload to %1").arg(remoteDir), localFolder());
+            if (!dir.isEmpty()) uploadPaths(QStringList() << dir, remoteDir);
         });
     }
     menu.addAction(style()->standardIcon(QStyle::SP_BrowserReload), "Refresh",
@@ -515,6 +655,32 @@ void FileBrowserPane::showRemoteContextMenu(const QPoint &pos)
 }
 
 // ---------- Local side ----------
+
+void FileBrowserPane::showLocalContextMenu(const QPoint &pos)
+{
+    QStringList paths;
+    for (const QModelIndex &index : m_localView->selectionModel()->selectedRows()) {
+        paths << m_localModel->filePath(index);
+    }
+
+    QMenu menu(this);
+    QString remoteDir = m_remoteModel->path();
+    if (!paths.isEmpty() && m_connected && !remoteDir.isEmpty()) {
+        QString what = paths.size() == 1 ? QString("\"%1\"").arg(QFileInfo(paths.first()).fileName())
+                                         : QString("%1 items").arg(paths.size());
+        menu.addAction(style()->standardIcon(QStyle::SP_ArrowUp),
+                       QString("Upload %1 to %2").arg(what, remoteDir), this, [this, paths, remoteDir]() {
+            uploadPaths(paths, remoteDir);
+        });
+    }
+    if (paths.size() == 1 && QFileInfo(paths.first()).isDir()) {
+        QString dir = paths.first();
+        menu.addAction(style()->standardIcon(QStyle::SP_DirOpenIcon), "Open", this,
+                       [this, dir]() { setLocalFolder(dir); });
+    }
+    if (menu.isEmpty()) return;
+    menu.exec(m_localView->viewport()->mapToGlobal(pos));
+}
 
 void FileBrowserPane::setLocalFolder(const QString &path)
 {
@@ -541,8 +707,8 @@ SftpWorker *FileBrowserPane::transferWorker()
         m_transferThread = new QThread(this);
         m_transferWorker = new SftpWorker(m_connection);
         m_transferWorker->moveToThread(m_transferThread);
-        connect(m_transferWorker, &SftpWorker::downloadProgress, this, &FileBrowserPane::onDownloadProgress);
-        connect(m_transferWorker, &SftpWorker::downloadFinished, this, &FileBrowserPane::onDownloadFinished);
+        connect(m_transferWorker, &SftpWorker::transferProgress, this, &FileBrowserPane::onTransferProgress);
+        connect(m_transferWorker, &SftpWorker::transferFinished, this, &FileBrowserPane::onTransferFinished);
         watch(m_transferWorker, &m_transferWatchdog);
         m_transferThread->start();
     }
@@ -570,33 +736,78 @@ void FileBrowserPane::downloadEntries(const QVector<RemoteEntry> &entries, const
 
     SftpWorker *worker = transferWorker();
     for (const RemoteEntry &e : entries) {
-        int jobId = m_nextJobId++;
         QString localPath = dir.filePath(e.name);
-
-        QTreeWidgetItem *item = new QTreeWidgetItem(m_transferList);
-        item->setText(0, e.isDir ? e.name + "/" : e.name);
-        item->setToolTip(0, QString("%1\n→ %2").arg(e.path, QDir::toNativeSeparators(localPath)));
-        item->setIcon(0, style()->standardIcon(e.isDir ? QStyle::SP_DirIcon : QStyle::SP_FileIcon));
-        item->setText(2, "Queued");
-        item->setData(0, Qt::UserRole, jobId);
-
-        QProgressBar *bar = new QProgressBar(m_transferList);
-        bar->setRange(0, 100);
-        bar->setValue(0);
-        bar->setTextVisible(true);
-        bar->setMaximumHeight(m_transferList->fontMetrics().height() + 4);
-        m_transferList->setItemWidget(item, 1, bar);
-
-        Transfer transfer = { item, bar, false };
-        m_transfers.insert(jobId, transfer);
-
+        int jobId = addTransfer(e.name, e.isDir, false,
+                                QString("%1\n→ %2").arg(e.path, QDir::toNativeSeparators(localPath)));
         QMetaObject::invokeMethod(worker, "download", Qt::QueuedConnection,
                                   Q_ARG(int, jobId), Q_ARG(RemoteEntry, e), Q_ARG(QString, localPath));
     }
-    m_transferList->scrollToBottom();
 }
 
-void FileBrowserPane::onDownloadProgress(int jobId, quint64 bytesDone, quint64 bytesTotal)
+void FileBrowserPane::uploadPaths(const QStringList &localPaths, const QString &remoteDir)
+{
+    if (localPaths.isEmpty() || remoteDir.isEmpty()) return;
+
+    // Names already on the server can only be checked for the folder shown
+    if (remoteDir == m_remoteModel->path()) {
+        QSet<QString> remoteNames;
+        for (int row = 0; row < m_remoteModel->rowCount(); ++row) {
+            remoteNames.insert(m_remoteModel->entry(m_remoteModel->index(row, 0)).name);
+        }
+        QStringList existing;
+        for (const QString &path : localPaths) {
+            QString name = QFileInfo(path).fileName();
+            if (remoteNames.contains(name)) existing << name;
+        }
+        if (!existing.isEmpty()) {
+            QString list = existing.mid(0, 8).join("\n");
+            if (existing.size() > 8) list += QString("\n... and %1 more").arg(existing.size() - 8);
+            int answer = QMessageBox::question(this, "Replace Files?",
+                QString("These already exist in %1 on the server:\n\n%2\n\n"
+                        "Replace them? Folders are merged.").arg(remoteDir, list),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer != QMessageBox::Yes) return;
+        }
+    }
+
+    SftpWorker *worker = transferWorker();
+    for (const QString &path : localPaths) {
+        QFileInfo info(path);
+        if (!info.exists()) continue;
+        QString remotePath = joinRemotePath(remoteDir, info.fileName());
+        int jobId = addTransfer(info.fileName(), info.isDir(), true,
+                                QString("%1\n→ %2").arg(QDir::toNativeSeparators(path), remotePath));
+        m_transfers[jobId].refreshDir = remoteDir;
+        QMetaObject::invokeMethod(worker, "upload", Qt::QueuedConnection,
+                                  Q_ARG(int, jobId), Q_ARG(QString, path), Q_ARG(QString, remotePath));
+    }
+}
+
+int FileBrowserPane::addTransfer(const QString &name, bool isDir, bool upload, const QString &tooltip)
+{
+    int jobId = m_nextJobId++;
+
+    QTreeWidgetItem *item = new QTreeWidgetItem(m_transferList);
+    item->setText(0, isDir ? name + "/" : name);
+    item->setToolTip(0, tooltip);
+    item->setIcon(0, style()->standardIcon(upload ? QStyle::SP_ArrowUp : QStyle::SP_ArrowDown));
+    item->setText(2, "Queued");
+    item->setData(0, Qt::UserRole, jobId);
+
+    QProgressBar *bar = new QProgressBar(m_transferList);
+    bar->setRange(0, 100);
+    bar->setValue(0);
+    bar->setTextVisible(true);
+    bar->setMaximumHeight(m_transferList->fontMetrics().height() + 4);
+    m_transferList->setItemWidget(item, 1, bar);
+
+    Transfer transfer = { item, bar, false, QString(), QString(), false };
+    m_transfers.insert(jobId, transfer);
+    m_transferList->scrollToBottom();
+    return jobId;
+}
+
+void FileBrowserPane::onTransferProgress(int jobId, quint64 bytesDone, quint64 bytesTotal)
 {
     auto it = m_transfers.find(jobId);
     if (it == m_transfers.end() || it->finished) return;
@@ -612,10 +823,13 @@ void FileBrowserPane::onDownloadProgress(int jobId, quint64 bytesDone, quint64 b
         .arg(QLocale().formattedDataSize(bytesDone), QLocale().formattedDataSize(bytesTotal)));
 }
 
-void FileBrowserPane::onDownloadFinished(int jobId, bool success, const QString &error)
+void FileBrowserPane::onTransferFinished(int jobId, bool success, const QString &error)
 {
     auto it = m_transfers.find(jobId);
     if (it == m_transfers.end()) return;
+    QString refreshDir = it->refreshDir;
+    QString editPath = it->editPath;
+    bool editUpload = it->editUpload;
 
     QString reason = success || m_transferWatchdog.stalledStep.isEmpty()
         ? error : stalledMessage(m_transferWatchdog.stalledStep);
@@ -633,6 +847,160 @@ void FileBrowserPane::onDownloadFinished(int jobId, bool success, const QString 
         it->item->setToolTip(2, reason);
         it->item->setForeground(2, QBrush(QColor("#c0392b")));
     }
+
+    if (!editPath.isEmpty() && m_edits.contains(editPath)) {
+        EditedFile &edit = m_edits[editPath];
+        if (!editUpload) {
+            // The local copy is ready: watch it and hand it to the editor
+            if (!success) {
+                m_edits.remove(editPath);
+            } else {
+                edit.savedHash = fileHash(editPath);
+                edit.ready = true;
+                watchEditedFile(editPath);
+                openInEditor(editPath);
+            }
+        } else {
+            edit.uploadJob = 0;
+            if (success) {
+                setRemoteStatus(QString("Saved %1 to the server.").arg(edit.remotePath));
+            } else {
+                edit.savedHash.clear();  // Try again on the next save
+                setRemoteStatus(QString("Could not save %1 to the server: %2\n"
+                                        "Save it again in your editor to retry.")
+                                    .arg(edit.remotePath, reason), true);
+            }
+            if (edit.changedAgain) {
+                edit.changedAgain = false;
+                checkEditedFiles();
+            }
+        }
+    }
+
+    // Show what an upload added, once the last one into this folder is done
+    if (!refreshDir.isEmpty() && refreshDir == m_remoteModel->path()) {
+        for (const Transfer &t : m_transfers) {
+            if (!t.finished && t.refreshDir == refreshDir) return;
+        }
+        navigateRemote(refreshDir);
+    }
+}
+
+// ---------- Edit ----------
+
+// Like WinSCP: download to a private temporary folder, open it in an editor,
+// and upload it again each time the editor saves it
+void FileBrowserPane::editRemoteFile(const RemoteEntry &entry)
+{
+    for (auto it = m_edits.constBegin(); it != m_edits.constEnd(); ++it) {
+        if (it->remotePath != entry.path) continue;
+        if (it->ready) openInEditor(it.key());
+        return;  // Already open, or still downloading
+    }
+
+    if (!m_editDir) {
+        m_editDir = new QTemporaryDir(QDir::temp().filePath("qtterminal-edit-XXXXXX"));
+        if (!m_editDir->isValid()) {
+            QMessageBox::warning(this, "Edit", QString("Could not create a temporary folder: %1")
+                                                   .arg(m_editDir->errorString()));
+            delete m_editDir;
+            m_editDir = nullptr;
+            return;
+        }
+    }
+    // A folder per file keeps its name, so the editor can pick the right
+    // highlighting, even when two remote files share a name
+    QString dir = m_editDir->filePath(QString::number(m_nextEditDir++));
+    QDir().mkpath(dir);
+    QString localPath = QDir(dir).filePath(entry.name);
+
+    EditedFile edit;
+    edit.remotePath = entry.path;
+    m_edits.insert(localPath, edit);
+
+    int jobId = addTransfer(entry.name, false, false, QString("%1\n→ editing in %2")
+                                .arg(entry.path, QDir::toNativeSeparators(localPath)));
+    m_transfers[jobId].editPath = localPath;
+    QMetaObject::invokeMethod(transferWorker(), "download", Qt::QueuedConnection,
+                              Q_ARG(int, jobId), Q_ARG(RemoteEntry, entry), Q_ARG(QString, localPath));
+}
+
+bool FileBrowserPane::chooseEditor()
+{
+    bool ok = false;
+    QString current = QSettings().value(kEditorSetting).toString();
+    QString command = QInputDialog::getText(this, "Choose Editor",
+        "Command that opens a file for editing, such as gedit, kate, code,\n"
+        "or \"xterm -e vim\". Leave it empty to use the system's default application.",
+        QLineEdit::Normal, current, &ok);
+    if (!ok) return false;
+    QSettings().setValue(kEditorSetting, command.trimmed());
+    return true;
+}
+
+void FileBrowserPane::openInEditor(const QString &localPath)
+{
+    QString command = QSettings().value(kEditorSetting).toString().trimmed();
+    if (command.isEmpty()) {
+        if (QDesktopServices::openUrl(QUrl::fromLocalFile(localPath))) return;
+        QMessageBox::information(this, "Edit",
+            "No application is set up to open this kind of file. Choose an editor to use.");
+        if (chooseEditor() && !QSettings().value(kEditorSetting).toString().trimmed().isEmpty()) {
+            openInEditor(localPath);
+        }
+        return;
+    }
+
+    QStringList args = QProcess::splitCommand(command);
+    QString program = args.takeFirst();
+    args << localPath;
+    if (!QProcess::startDetached(program, args)) {
+        QMessageBox::warning(this, "Edit", QString("Could not start \"%1\". Choose another "
+                                                   "editor with Edit With...").arg(command));
+    }
+}
+
+void FileBrowserPane::watchEditedFile(const QString &localPath)
+{
+    if (!m_editWatcher->files().contains(localPath)) m_editWatcher->addPath(localPath);
+}
+
+void FileBrowserPane::checkEditedFiles()
+{
+    bool missing = false;
+    for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
+        if (!it->ready) continue;
+        // Saving by renaming a new file over the old one ends the watch
+        if (!QFileInfo::exists(it.key())) {
+            missing = true;
+            continue;
+        }
+        watchEditedFile(it.key());
+        QByteArray hash = fileHash(it.key());
+        if (!hash.isNull() && hash != it->savedHash) saveEditedFile(it.key());
+    }
+    if (missing) m_editTimer->start();  // Look again once the save completes
+}
+
+void FileBrowserPane::saveEditedFile(const QString &localPath)
+{
+    EditedFile &edit = m_edits[localPath];
+    if (edit.uploadJob) {
+        edit.changedAgain = true;  // Send the newest version after this one
+        return;
+    }
+
+    QString name = QFileInfo(localPath).fileName();
+    edit.savedHash = fileHash(localPath);
+    int jobId = addTransfer(name, false, true, QString("Saving %1\n→ %2")
+                                .arg(QDir::toNativeSeparators(localPath), edit.remotePath));
+    m_transfers[jobId].editPath = localPath;
+    m_transfers[jobId].editUpload = true;
+    m_transfers[jobId].refreshDir = RemoteFileModel::parentPath(edit.remotePath);
+    edit.uploadJob = jobId;
+    QMetaObject::invokeMethod(transferWorker(), "upload", Qt::QueuedConnection,
+                              Q_ARG(int, jobId), Q_ARG(QString, localPath),
+                              Q_ARG(QString, edit.remotePath));
 }
 
 bool FileBrowserPane::hasActiveTransfers() const
@@ -647,7 +1015,7 @@ void FileBrowserPane::cancelTransfer(int jobId)
 {
     auto it = m_transfers.find(jobId);
     if (it == m_transfers.end() || it->finished || !m_transferWorker) return;
-    m_transferWorker->cancelDownload(jobId);
+    m_transferWorker->cancelTransfer(jobId);
     it->item->setText(2, "Cancelling...");
 }
 

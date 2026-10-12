@@ -15,12 +15,15 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <cstring>
 
 namespace {
 
 const int kConnectTimeoutSeconds = 15;
 const uint32_t kReadChunk = 32 * 1024;   // Every SFTP server accepts this size
 const int kReadsInFlight = 16;           // Pipelined requests per file
+const uint32_t kOpenSshWriteChunk = 128 * 1024;
 
 // libssh 0.9 reads ~/.ssh/config and ~/.ssh/known_hosts with strtok(), which
 // is not thread-safe: two panes connecting at once can corrupt each other's
@@ -103,7 +106,7 @@ private:
 
 SftpWorker::SftpWorker(const SSHConnection &connection, QObject *parent)
     : QObject(parent), m_connection(connection), m_session(nullptr), m_sftp(nullptr),
-      m_cancelAll(false), m_socket(-1), m_aborted(false)
+      m_cancelAll(false), m_writeChunk(kReadChunk), m_socket(-1), m_aborted(false)
 {
 }
 
@@ -121,7 +124,7 @@ SftpWorker::~SftpWorker()
     disconnectFromServer();
 }
 
-void SftpWorker::cancelDownload(int jobId)
+void SftpWorker::cancelTransfer(int jobId)
 {
     QMutexLocker lock(&m_cancelMutex);
     m_cancelledJobs.insert(jobId);
@@ -243,6 +246,12 @@ bool SftpWorker::ensureConnected(QString *error)
         disconnectFromServer();
         return false;
     }
+
+    // libssh waits for each write's reply before sending the next, so fewer,
+    // larger writes upload much faster. OpenSSH accepts up to 255 KB per
+    // write; other servers are only required to take 32 KB.
+    const char *banner = ssh_get_serverbanner(m_session);
+    m_writeChunk = banner && strstr(banner, "OpenSSH") ? kOpenSshWriteChunk : kReadChunk;
     return true;
 }
 
@@ -475,17 +484,17 @@ void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &lo
     BusyScope scope(this);
     QString error;
     if (isCancelled(jobId)) {
-        emit downloadFinished(jobId, false, "Cancelled");
+        emit transferFinished(jobId, false, "Cancelled");
         return;
     }
     if (!ensureConnected(&error)) {
-        emit downloadFinished(jobId, false, error);
+        emit transferFinished(jobId, false, error);
         return;
     }
 
     quint64 done = 0;
     m_progressTimer.start();
-    emit downloadProgress(jobId, 0, entry.isDir ? 0 : entry.size);
+    emit transferProgress(jobId, 0, entry.isDir ? 0 : entry.size);
     bool ok;
     if (entry.isDir) {
         ok = downloadTree(jobId, entry, localPath, &done, &error);
@@ -493,9 +502,38 @@ void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &lo
         ok = downloadFile(jobId, entry, localPath, &done, entry.size, &error);
     }
     if (!ok && ssh_is_connected(m_session) == 0) {
-        disconnectFromServer();  // Reconnect for the next download
+        disconnectFromServer();  // Reconnect for the next transfer
     }
-    emit downloadFinished(jobId, ok, ok ? QString() : error);
+    emit transferFinished(jobId, ok, ok ? QString() : error);
+}
+
+void SftpWorker::upload(int jobId, const QString &localPath, const QString &remotePath)
+{
+    BusyScope scope(this);
+    QString error;
+    if (isCancelled(jobId)) {
+        emit transferFinished(jobId, false, "Cancelled");
+        return;
+    }
+    if (!ensureConnected(&error)) {
+        emit transferFinished(jobId, false, error);
+        return;
+    }
+
+    QFileInfo info(localPath);
+    quint64 done = 0;
+    m_progressTimer.start();
+    emit transferProgress(jobId, 0, info.isDir() ? 0 : quint64(info.size()));
+    bool ok;
+    if (info.isDir()) {
+        ok = uploadTree(jobId, localPath, remotePath, &done, &error);
+    } else {
+        ok = uploadFile(jobId, localPath, remotePath, &done, quint64(info.size()), &error);
+    }
+    if (!ok && ssh_is_connected(m_session) == 0) {
+        disconnectFromServer();
+    }
+    emit transferFinished(jobId, ok, ok ? QString() : error);
 }
 
 // Progress at most ten times a second, so a fast link doesn't flood the UI
@@ -503,7 +541,7 @@ void SftpWorker::reportProgress(int jobId, quint64 bytesDone, quint64 bytesTotal
 {
     if (m_progressTimer.elapsed() >= 100 || bytesDone >= bytesTotal) {
         m_progressTimer.restart();
-        emit downloadProgress(jobId, bytesDone, bytesTotal);
+        emit transferProgress(jobId, bytesDone, bytesTotal);
     }
 }
 
@@ -550,7 +588,7 @@ bool SftpWorker::downloadTree(int jobId, const RemoteEntry &root, const QString 
         }
     }
 
-    emit downloadProgress(jobId, 0, total);
+    emit transferProgress(jobId, 0, total);
     for (const PendingFile &file : files) {
         if (!downloadFile(jobId, file.entry, file.localPath, bytesDone, total, error)) {
             *error = QString("%1: %2").arg(file.entry.path, *error);
@@ -671,5 +709,175 @@ bool SftpWorker::downloadFile(int jobId, const RemoteEntry &entry, const QString
     if (entry.permissions & S_IXUSR) {
         done.setPermissions(done.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
     }
+    return true;
+}
+
+bool SftpWorker::makeRemoteDir(const QString &path, QString *error)
+{
+    QByteArray remote = path.toUtf8();
+    sftp_attributes attr = sftp_stat(m_sftp, remote.constData());
+    if (attr) {
+        bool isDir = attr->type == SSH_FILEXFER_TYPE_DIRECTORY;
+        sftp_attributes_free(attr);
+        if (isDir) return true;  // Uploading into a folder that exists merges
+        *error = QString("%1: a file with that name already exists").arg(path);
+        return false;
+    }
+    if (sftp_mkdir(m_sftp, remote.constData(), 0755) != SSH_OK) {
+        *error = QString("Could not create %1: %2").arg(path, sftpError());
+        return false;
+    }
+    return true;
+}
+
+bool SftpWorker::uploadTree(int jobId, const QString &localRoot, const QString &remoteRoot,
+                            quint64 *bytesDone, QString *error)
+{
+    // List the folder first so progress can show the full size
+    QStringList remoteDirs;
+    QList<QPair<QString, QString>> files;
+    quint64 total = 0;
+
+    QQueue<QPair<QString, QString>> pending;
+    pending.enqueue(qMakePair(localRoot, remoteRoot));
+    while (!pending.isEmpty()) {
+        if (isCancelled(jobId)) {
+            *error = "Cancelled";
+            return false;
+        }
+        QPair<QString, QString> dir = pending.dequeue();
+        remoteDirs << dir.second;
+
+        const QFileInfoList children = QDir(dir.first).entryInfoList(
+            QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QFileInfo &child : children) {
+            QString childRemote = joinRemotePath(dir.second, child.fileName());
+            if (child.isDir()) {
+                // Following links to folders could loop forever
+                if (!child.isSymLink()) pending.enqueue(qMakePair(child.filePath(), childRemote));
+            } else if (child.isFile()) {
+                files.append(qMakePair(child.filePath(), childRemote));
+                total += child.size();
+            }
+        }
+    }
+
+    for (const QString &dir : remoteDirs) {
+        emit step("Creating " + dir);
+        if (!makeRemoteDir(dir, error)) return false;
+    }
+
+    emit transferProgress(jobId, 0, total);
+    for (const auto &file : files) {
+        if (!uploadFile(jobId, file.first, file.second, bytesDone, total, error)) {
+            *error = QString("%1: %2").arg(file.first, *error);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Writes beside the target and renames at the end, so a failed upload never
+// leaves a truncated file under the real name. A file being replaced keeps
+// its permissions, and its owner where the server allows it.
+bool SftpWorker::uploadFile(int jobId, const QString &localPath, const QString &remotePath,
+                            quint64 *bytesDone, quint64 bytesTotal, QString *error)
+{
+    QFile local(localPath);
+    if (!local.open(QIODevice::ReadOnly)) {
+        *error = QString("Could not read %1: %2").arg(localPath, local.errorString());
+        return false;
+    }
+
+    QByteArray target = remotePath.toUtf8();
+    QByteArray part = (remotePath + ".part").toUtf8();
+
+    sftp_attributes existing = sftp_lstat(m_sftp, target.constData());
+    bool exists = existing != nullptr;
+    bool isLink = exists && existing->type == SSH_FILEXFER_TYPE_SYMLINK;
+    if (isLink) {
+        sftp_attributes_free(existing);
+        existing = sftp_stat(m_sftp, target.constData());
+    }
+    if (existing && existing->type == SSH_FILEXFER_TYPE_DIRECTORY) {
+        sftp_attributes_free(existing);
+        *error = "A folder with that name already exists";
+        return false;
+    }
+
+    mode_t mode = 0644;
+    struct stat st;
+    if (::stat(QFile::encodeName(localPath).constData(), &st) == 0) mode = st.st_mode & 0777;
+    uint32_t uid = 0, gid = 0;
+    if (existing) {
+        mode = existing->permissions & 07777;
+        uid = existing->uid;
+        gid = existing->gid;
+        sftp_attributes_free(existing);
+    }
+
+    // Write straight into a link's target so the link stays a link, and
+    // into an existing file when its folder doesn't let us create the
+    // temporary one (a writable file in /etc, say)
+    bool inPlace = isLink;
+    sftp_file remote = nullptr;
+    if (!inPlace) {
+        remote = sftp_open(m_sftp, part.constData(), O_WRONLY | O_CREAT | O_TRUNC, mode);
+        if (!remote && exists && sftp_get_error(m_sftp) == SSH_FX_PERMISSION_DENIED) inPlace = true;
+    }
+    if (inPlace) remote = sftp_open(m_sftp, target.constData(), O_WRONLY | O_TRUNC, 0);
+    if (!remote) {
+        *error = sftpError();
+        return false;
+    }
+
+    QByteArray buffer(m_writeChunk, Qt::Uninitialized);
+    bool ok = true;
+    while (ok) {
+        qint64 count = local.read(buffer.data(), buffer.size());
+        if (count < 0) {
+            *error = QString("Could not read %1: %2").arg(localPath, local.errorString());
+            ok = false;
+        } else if (count == 0) {
+            break;
+        } else if (sftp_write(remote, buffer.constData(), size_t(count)) != count) {
+            *error = sftpError();
+            ok = false;
+        } else {
+            *bytesDone += count;
+            reportProgress(jobId, *bytesDone, bytesTotal);
+            if (isCancelled(jobId)) {
+                *error = "Cancelled";
+                ok = false;
+            }
+        }
+    }
+    sftp_close(remote);
+
+    if (!ok) {
+        if (!inPlace) sftp_unlink(m_sftp, part.constData());
+        return false;
+    }
+
+    if (!inPlace) {
+        if (exists) {
+            sftp_chmod(m_sftp, part.constData(), mode);
+            sftp_chown(m_sftp, part.constData(), uid, gid);  // Only works as root
+        }
+        // SFTP version 3 servers refuse to rename onto an existing file
+        if (sftp_rename(m_sftp, part.constData(), target.constData()) != SSH_OK) {
+            if (!exists || sftp_unlink(m_sftp, target.constData()) != SSH_OK
+                || sftp_rename(m_sftp, part.constData(), target.constData()) != SSH_OK) {
+                *error = QString("Could not replace %1: %2").arg(remotePath, sftpError());
+                sftp_unlink(m_sftp, part.constData());
+                return false;
+            }
+        }
+    }
+
+    struct timeval times[2];
+    times[0].tv_sec = times[1].tv_sec = QFileInfo(local).lastModified().toSecsSinceEpoch();
+    times[0].tv_usec = times[1].tv_usec = 0;
+    sftp_utimes(m_sftp, target.constData(), times);
     return true;
 }
