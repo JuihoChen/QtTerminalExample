@@ -82,7 +82,8 @@ std::pair<double, double> TerminalPositionManager::getCharacterDimensions() {
     return std::make_pair(charWidth, charHeight);
 }
 
-EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(parent) {
+// Don't start the shell yet, so the caller can set its program and working directory first
+EnhancedQTermWidget::EnhancedQTermWidget(QWidget *parent) : QTermWidget(0, parent) {
     // Initialize member variables
     m_hasActiveSelection = false;
     m_isDragging = false;

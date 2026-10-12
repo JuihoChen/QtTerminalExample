@@ -92,6 +92,8 @@ void TerminalWindow::setupMenus()
     fileMenu->addAction("&New Tab", this, &TerminalWindow::newTab, QKeySequence::New);
     fileMenu->addAction("&Close Tab", this, &TerminalWindow::closeCurrentTab, QKeySequence::Close);
     fileMenu->addSeparator();
+    fileMenu->addAction("&Start Folder...", this, &TerminalWindow::chooseStartFolder);
+    fileMenu->addSeparator();
     fileMenu->addAction("&Quit", this, &QWidget::close, QKeySequence::Quit);
 
     // Edit menu

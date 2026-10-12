@@ -54,6 +54,7 @@ private slots:
     void selectAllText();
     void onTabChanged(int index);
     void onTerminalFinished();
+    void chooseStartFolder();
 
     // Connection tree slots
     void onConnectionDoubleClicked(QTreeWidgetItem *item, int column);
@@ -93,6 +94,7 @@ private:
     QTermWidget* createTerminal();
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
+    QString startFolder() const;
 
     // Feature 4: SSH terminal creation
     QTermWidget* createSSHTerminal(const SSHConnection &connection);
