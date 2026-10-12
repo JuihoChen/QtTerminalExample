@@ -9,9 +9,11 @@
 #include <QQueue>
 
 #include <libssh/libssh.h>
+#include <libssh/callbacks.h>
 #include <libssh/sftp.h>
 
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 namespace {
@@ -20,9 +22,34 @@ const int kConnectTimeoutSeconds = 15;
 const uint32_t kReadChunk = 32 * 1024;   // Every SFTP server accepts this size
 const int kReadsInFlight = 16;           // Pipelined requests per file
 
+// libssh 0.9 reads ~/.ssh/config and ~/.ssh/known_hosts with strtok(), which
+// is not thread-safe: two panes connecting at once can corrupt each other's
+// parsing and crash or hang. Only one worker at a time may run those parts.
+QMutex g_configParseMutex;
+
 QString joinRemotePath(const QString &dir, const QString &name)
 {
     return dir.endsWith('/') ? dir + name : dir + '/' + name;
+}
+
+// Answers libssh's passphrase requests with "no passphrase". Without it,
+// loading a passphrase-protected PEM key makes OpenSSL ask on the terminal
+// the app was started from and wait there forever.
+int refusePassphrase(const char *, char *, size_t, int, int, void *)
+{
+    return -1;
+}
+
+ssh_callbacks passphraseCallbacks()
+{
+    static ssh_callbacks_struct callbacks = [] {
+        ssh_callbacks_struct cb;
+        memset(&cb, 0, sizeof(cb));
+        ssh_callbacks_init(&cb);
+        cb.auth_function = refusePassphrase;
+        return cb;
+    }();
+    return &callbacks;
 }
 
 // Offers the standard ~/.ssh keys without asking ssh-agent. libssh's
@@ -38,7 +65,7 @@ bool authenticateWithDefaultKeys(ssh_session session)
 
         ssh_key key = nullptr;
         if (ssh_pki_import_privkey_file(QFile::encodeName(path).constData(),
-                                        nullptr, nullptr, nullptr, &key) != SSH_OK) {
+                                        nullptr, refusePassphrase, nullptr, &key) != SSH_OK) {
             continue;  // Unreadable, or needs a passphrase
         }
         int rc = ssh_userauth_publickey(session, nullptr, key);
@@ -56,10 +83,37 @@ struct PendingFile {
 
 } // namespace
 
+// Brackets one request with busy(true) / busy(false)
+class BusyScope
+{
+public:
+    explicit BusyScope(SftpWorker *worker) : m_worker(worker)
+    {
+        {
+            QMutexLocker lock(&worker->m_socketMutex);
+            worker->m_aborted = false;
+        }
+        emit worker->busy(true);
+    }
+    ~BusyScope() { emit m_worker->busy(false); }
+
+private:
+    SftpWorker *m_worker;
+};
+
 SftpWorker::SftpWorker(const SSHConnection &connection, QObject *parent)
     : QObject(parent), m_connection(connection), m_session(nullptr), m_sftp(nullptr),
-      m_cancelAll(false)
+      m_cancelAll(false), m_socket(-1), m_aborted(false)
 {
+}
+
+void SftpWorker::abortConnection()
+{
+    QMutexLocker lock(&m_socketMutex);
+    m_aborted = true;
+    // Holding the mutex keeps the worker from freeing (and the system from
+    // reusing) the socket until shutdown() is done with it
+    if (m_socket >= 0) ::shutdown(m_socket, SHUT_RDWR);
 }
 
 SftpWorker::~SftpWorker()
@@ -77,6 +131,12 @@ void SftpWorker::cancelAll()
 {
     QMutexLocker lock(&m_cancelMutex);
     m_cancelAll = true;
+}
+
+bool SftpWorker::wasAborted()
+{
+    QMutexLocker lock(&m_socketMutex);
+    return m_aborted;
 }
 
 bool SftpWorker::isCancelled(int jobId)
@@ -102,6 +162,7 @@ QString SftpWorker::formatPermissions(quint32 permissions, bool isDir, bool isLi
 
 void SftpWorker::connectToServer()
 {
+    BusyScope scope(this);
     QString error;
     if (!ensureConnected(&error)) {
         emit connectionFailed(error);
@@ -116,6 +177,10 @@ void SftpWorker::connectToServer()
 
 void SftpWorker::disconnectFromServer()
 {
+    {
+        QMutexLocker lock(&m_socketMutex);
+        m_socket = -1;
+    }
     if (m_sftp) {
         sftp_free(m_sftp);
         m_sftp = nullptr;
@@ -146,7 +211,11 @@ bool SftpWorker::ensureConnected(QString *error)
     ssh_options_set(m_session, SSH_OPTIONS_USER, user.constData());
     ssh_options_set(m_session, SSH_OPTIONS_PORT, &port);
     ssh_options_set(m_session, SSH_OPTIONS_TIMEOUT, &timeout);
+    // ssh_userauth_publickey_auto() loads default keys with these callbacks
+    ssh_set_callbacks(m_session, passphraseCallbacks());
 
+    emit step(QString("Connecting to %1:%2").arg(m_connection.host).arg(m_connection.port));
+    QMutexLocker parseLock(&g_configParseMutex);
     if (ssh_connect(m_session) != SSH_OK) {
         *error = QString("Could not connect to %1:%2\n%3")
                      .arg(m_connection.host).arg(m_connection.port)
@@ -154,12 +223,20 @@ bool SftpWorker::ensureConnected(QString *error)
         disconnectFromServer();
         return false;
     }
+    {
+        QMutexLocker lock(&m_socketMutex);
+        m_socket = ssh_get_fd(m_session);
+    }
 
-    if (!verifyHostKey(error) || !authenticate(error)) {
+    emit step("Checking the host key");
+    bool hostKeyOk = verifyHostKey(error);
+    parseLock.unlock();
+    if (!hostKeyOk || !authenticate(error)) {
         disconnectFromServer();
         return false;
     }
 
+    emit step("Starting SFTP");
     m_sftp = sftp_new(m_session);
     if (!m_sftp || sftp_init(m_sftp) != SSH_OK) {
         *error = QString("The server did not start SFTP: %1").arg(ssh_get_error(m_session));
@@ -199,8 +276,10 @@ bool SftpWorker::verifyHostKey(QString *error)
     }
 }
 
-// Tries the same methods, in the same order, as the ssh command line built
-// by CommandSafetyHelper: key file, ssh-agent and default keys, then password.
+// Tries the same methods as the ssh command line built by CommandSafetyHelper:
+// key file, ssh-agent and default keys, and the saved password. A connection
+// with a saved password and key authentication off tries the password first,
+// so a stray key or a slow agent can't get in its way.
 bool SftpWorker::authenticate(QString *error)
 {
     int rc = ssh_userauth_none(m_session, nullptr);
@@ -212,50 +291,81 @@ bool SftpWorker::authenticate(QString *error)
 
     int methods = ssh_userauth_list(m_session, nullptr);
     QStringList tried;
+    bool passwordFirst = !m_connection.useKeyAuth && !m_connection.password.isEmpty();
 
-    if (methods & SSH_AUTH_METHOD_PUBLICKEY) {
-        QString keyFile = m_connection.useKeyAuth
-            ? CommandSafetyHelper::expandHomePath(m_connection.identityFile) : QString();
+    if (passwordFirst && authenticateWithPassword(methods, &tried)) return true;
+    if (authenticateWithKeys(methods, &tried)) return true;
+    if (!passwordFirst && authenticateWithPassword(methods, &tried)) return true;
 
-        if (!keyFile.isEmpty()) {
-            tried << "key file";
-            ssh_key key = nullptr;
-            if (ssh_pki_import_privkey_file(QFile::encodeName(keyFile).constData(),
-                                            nullptr, nullptr, nullptr, &key) == SSH_OK) {
-                rc = ssh_userauth_publickey(m_session, nullptr, key);
-                ssh_key_free(key);
-                if (rc == SSH_AUTH_SUCCESS) return true;
-            } else {
-                tried.last() = "key file (could not be read, or needs a passphrase)";
-            }
-        }
+    if (tried.isEmpty()) {
+        *error = QString("%1 accepts no login method this connection can offer. "
+                         "Save a password, or set up an SSH key, in Edit Connection.")
+                     .arg(m_connection.host);
+    } else {
+        *error = QString("The server refused the login for %1@%2.\nTried: %3")
+                     .arg(m_connection.username, m_connection.host, tried.join(", "));
+    }
+    return false;
+}
 
-        // IdentitiesOnly: with the agent turned off, offer only the key file
-        bool onlyKeyFile = m_connection.useKeyAuth && !m_connection.useAgent && !keyFile.isEmpty();
-        if (!onlyKeyFile && m_connection.useKeyAuth && !m_connection.useAgent) {
-            // Same as "ssh -o IdentityAgent=none": never ask the running ssh-agent
-            tried << "default keys";
-            if (authenticateWithDefaultKeys(m_session)) return true;
-        } else if (!onlyKeyFile) {
-            tried << "ssh-agent and default keys";
-            rc = ssh_userauth_publickey_auto(m_session, nullptr, nullptr);
+bool SftpWorker::authenticateWithKeys(int methods, QStringList *tried)
+{
+    if (!(methods & SSH_AUTH_METHOD_PUBLICKEY)) return false;
+
+    QString keyFile = m_connection.useKeyAuth
+        ? CommandSafetyHelper::expandHomePath(m_connection.identityFile) : QString();
+
+    if (!keyFile.isEmpty()) {
+        *tried << "key file";
+        emit step("Logging in with key file");
+        ssh_key key = nullptr;
+        if (ssh_pki_import_privkey_file(QFile::encodeName(keyFile).constData(),
+                                        nullptr, refusePassphrase, nullptr, &key) == SSH_OK) {
+            int rc = ssh_userauth_publickey(m_session, nullptr, key);
+            ssh_key_free(key);
             if (rc == SSH_AUTH_SUCCESS) return true;
+        } else {
+            tried->last() = "key file (could not be read, or needs a passphrase)";
         }
     }
 
+    // IdentitiesOnly: with the agent turned off, offer only the key file
+    bool onlyKeyFile = m_connection.useKeyAuth && !m_connection.useAgent && !keyFile.isEmpty();
+    if (onlyKeyFile) return false;
+
+    if (m_connection.useKeyAuth && !m_connection.useAgent) {
+        // Same as "ssh -o IdentityAgent=none": never ask the running ssh-agent
+        *tried << "default keys";
+        emit step("Logging in with default keys");
+        return authenticateWithDefaultKeys(m_session);
+    }
+
+    *tried << "ssh-agent and default keys";
+    emit step("Logging in with ssh-agent and default keys");
+    return ssh_userauth_publickey_auto(m_session, nullptr, nullptr) == SSH_AUTH_SUCCESS;
+}
+
+bool SftpWorker::authenticateWithPassword(int methods, QStringList *tried)
+{
     QByteArray password = m_connection.password.toUtf8();
-    if (!password.isEmpty() && (methods & SSH_AUTH_METHOD_PASSWORD)) {
-        tried << "password";
+    if (password.isEmpty()) return false;
+
+    if (methods & SSH_AUTH_METHOD_PASSWORD) {
+        *tried << "password";
+        emit step("Logging in with password");
         if (ssh_userauth_password(m_session, nullptr, password.constData()) == SSH_AUTH_SUCCESS) {
             return true;
         }
     }
 
     // Servers using PAM often ask for the password this way instead
-    if (!password.isEmpty() && (methods & SSH_AUTH_METHOD_INTERACTIVE)) {
-        tried << "keyboard-interactive";
-        rc = ssh_userauth_kbdint(m_session, nullptr, nullptr);
-        while (rc == SSH_AUTH_INFO) {
+    if (methods & SSH_AUTH_METHOD_INTERACTIVE) {
+        *tried << "keyboard-interactive";
+        emit step("Logging in with keyboard-interactive");
+        int rc = ssh_userauth_kbdint(m_session, nullptr, nullptr);
+        // A server that keeps asking (a password change, a second factor)
+        // is not one a saved password can answer
+        for (int round = 0; rc == SSH_AUTH_INFO && round < 5; ++round) {
             int prompts = ssh_userauth_kbdint_getnprompts(m_session);
             for (int i = 0; i < prompts; ++i) {
                 char echo = 0;
@@ -265,15 +375,6 @@ bool SftpWorker::authenticate(QString *error)
             rc = ssh_userauth_kbdint(m_session, nullptr, nullptr);
         }
         if (rc == SSH_AUTH_SUCCESS) return true;
-    }
-
-    if (tried.isEmpty()) {
-        *error = QString("%1 accepts no login method this connection can offer. "
-                         "Save a password, or set up an SSH key, in Edit Connection.")
-                     .arg(m_connection.host);
-    } else {
-        *error = QString("The server refused the login for %1@%2.\nTried: %3")
-                     .arg(m_connection.username, m_connection.host, tried.join(", "));
     }
     return false;
 }
@@ -343,6 +444,7 @@ bool SftpWorker::readDirectory(const QString &path, QVector<RemoteEntry> *entrie
 
 void SftpWorker::listDirectory(const QString &path)
 {
+    BusyScope scope(this);
     QString error;
     if (!ensureConnected(&error)) {
         emit listingFailed(path, error);
@@ -355,8 +457,9 @@ void SftpWorker::listDirectory(const QString &path)
         return;
     }
 
-    // A dropped connection gets one fresh attempt
-    if (ssh_is_connected(m_session) == 0) {
+    // A dropped connection gets one fresh attempt, unless the UI cut it
+    // because the server stopped answering
+    if (!wasAborted() && ssh_is_connected(m_session) == 0) {
         disconnectFromServer();
         entries.clear();
         if (ensureConnected(&error) && readDirectory(path, &entries, &error)) {
@@ -369,6 +472,7 @@ void SftpWorker::listDirectory(const QString &path)
 
 void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &localPath)
 {
+    BusyScope scope(this);
     QString error;
     if (isCancelled(jobId)) {
         emit downloadFinished(jobId, false, "Cancelled");
@@ -387,6 +491,9 @@ void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &lo
         ok = downloadTree(jobId, entry, localPath, &done, &error);
     } else {
         ok = downloadFile(jobId, entry, localPath, &done, entry.size, &error);
+    }
+    if (!ok && ssh_is_connected(m_session) == 0) {
+        disconnectFromServer();  // Reconnect for the next download
     }
     emit downloadFinished(jobId, ok, ok ? QString() : error);
 }
@@ -417,6 +524,7 @@ bool SftpWorker::downloadTree(int jobId, const RemoteEntry &root, const QString 
         }
         PendingFile dir = pending.dequeue();
         localDirs << dir.localPath;
+        emit step("Reading " + dir.entry.path);
 
         QVector<RemoteEntry> entries;
         if (!readDirectory(dir.entry.path, &entries, error)) {

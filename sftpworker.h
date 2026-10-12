@@ -48,6 +48,10 @@ public:
     void cancelDownload(int jobId);
     void cancelAll();
 
+    // Thread-safe: cut the connection so a call blocked on an unresponsive
+    // server returns with an error (libssh's SFTP reads have no timeout)
+    void abortConnection();
+
     static QString formatPermissions(quint32 permissions, bool isDir, bool isLink);
 
 public slots:
@@ -57,6 +61,12 @@ public slots:
     void disconnectFromServer();
 
 signals:
+    // busy(true) when a request starts and busy(false) when it ends; step()
+    // in between names what it is waiting on. Together they let the UI notice
+    // a request that stops making progress.
+    void busy(bool busy);
+    void step(const QString &description);
+
     void connected(const QString &homePath);
     void connectionFailed(const QString &error);
     void directoryListed(const QString &path, const QVector<RemoteEntry> &entries);
@@ -67,9 +77,12 @@ signals:
 private:
     bool ensureConnected(QString *error);
     bool authenticate(QString *error);
+    bool authenticateWithKeys(int methods, QStringList *tried);
+    bool authenticateWithPassword(int methods, QStringList *tried);
     bool verifyHostKey(QString *error);
     QString sftpError() const;
     bool isCancelled(int jobId);
+    bool wasAborted();
     bool readDirectory(const QString &path, QVector<RemoteEntry> *entries, QString *error);
     bool downloadFile(int jobId, const RemoteEntry &entry, const QString &localPath,
                       quint64 *bytesDone, quint64 bytesTotal, QString *error);
@@ -85,6 +98,12 @@ private:
     QSet<int> m_cancelledJobs;
     bool m_cancelAll;
     QElapsedTimer m_progressTimer;
+
+    QMutex m_socketMutex;
+    int m_socket;     // Connection's socket while connected, else -1
+    bool m_aborted;   // abortConnection() was called during this request
+
+    friend class BusyScope;
 };
 
 #endif // SFTPWORKER_H

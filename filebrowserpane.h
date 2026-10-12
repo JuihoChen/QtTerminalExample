@@ -16,6 +16,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QProgressBar;
 class QThread;
+class QTimer;
 QT_END_NAMESPACE
 
 class RemoteFileModel;
@@ -69,11 +70,22 @@ private slots:
     void showTransferContextMenu(const QPoint &pos);
 
 private:
+    // Cuts a worker's connection when a request stops making progress, so an
+    // unresponsive server can't leave the pane waiting forever
+    struct Watchdog {
+        QTimer *timer = nullptr;
+        QString step;         // What the worker is currently waiting on
+        QString stalledStep;  // Set when the timer fired during this request
+    };
+
     struct Transfer {
         QTreeWidgetItem *item;
         QProgressBar *bar;
         bool finished;
     };
+
+    void watch(SftpWorker *worker, Watchdog *watchdog);
+    QString stalledMessage(const QString &step) const;
 
     QWidget *createRemoteSection();
     QWidget *createLocalSection();
@@ -119,6 +131,9 @@ private:
     QTreeWidget *m_transferList;
     QHash<int, Transfer> m_transfers;
     int m_nextJobId;
+
+    Watchdog m_browseWatchdog;
+    Watchdog m_transferWatchdog;
 };
 
 #endif // FILEBROWSERPANE_H
