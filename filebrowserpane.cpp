@@ -22,11 +22,15 @@
 #include <QSplitter>
 #include <QStyle>
 #include <QThread>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 namespace {
+
+// A request that shows no progress for this long is cut off
+const int kStallSeconds = 30;
 
 QToolButton *makeToolButton(QWidget *parent, QStyle::StandardPixmap icon, const QString &tip)
 {
@@ -132,6 +136,10 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
     connect(m_browseWorker, &SftpWorker::connectionFailed, this, &FileBrowserPane::onConnectionFailed);
     connect(m_browseWorker, &SftpWorker::directoryListed, this, &FileBrowserPane::onDirectoryListed);
     connect(m_browseWorker, &SftpWorker::listingFailed, this, &FileBrowserPane::onListingFailed);
+    connect(m_browseWorker, &SftpWorker::step, this, [this](const QString &step) {
+        if (!m_connected) setRemoteStatus(step + "...");
+    });
+    watch(m_browseWorker, &m_browseWatchdog);
     m_browseThread->start();
 
     setRemoteStatus(QString("Connecting to %1...").arg(m_connection.host));
@@ -140,9 +148,14 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
 
 FileBrowserPane::~FileBrowserPane()
 {
-    // Stop downloads at the next chunk so the threads can finish quickly
+    // Stop downloads at the next chunk, and cut connections that may be
+    // stuck waiting on the server, so the threads can finish quickly
     m_browseWorker->cancelAll();
-    if (m_transferWorker) m_transferWorker->cancelAll();
+    m_browseWorker->abortConnection();
+    if (m_transferWorker) {
+        m_transferWorker->cancelAll();
+        m_transferWorker->abortConnection();
+    }
 
     m_browseThread->quit();
     m_browseThread->wait();
@@ -153,6 +166,50 @@ FileBrowserPane::~FileBrowserPane()
         m_transferThread->wait();
         delete m_transferWorker;
     }
+}
+
+void FileBrowserPane::watch(SftpWorker *worker, Watchdog *watchdog)
+{
+    watchdog->timer = new QTimer(this);
+    watchdog->timer->setSingleShot(true);
+    watchdog->timer->setInterval(kStallSeconds * 1000);
+
+    connect(worker, &SftpWorker::busy, this, [watchdog](bool busy) {
+        if (busy) {
+            watchdog->step.clear();
+            watchdog->stalledStep.clear();
+            watchdog->timer->start();
+        } else {
+            watchdog->timer->stop();
+        }
+    });
+    connect(worker, &SftpWorker::step, this, [watchdog](const QString &step) {
+        watchdog->step = step;
+        if (watchdog->timer->isActive()) watchdog->timer->start();
+    });
+    connect(worker, &SftpWorker::downloadProgress, this, [watchdog]() {
+        if (watchdog->timer->isActive()) watchdog->timer->start();
+    });
+    connect(watchdog->timer, &QTimer::timeout, this, [worker, watchdog]() {
+        watchdog->stalledStep = watchdog->step.isEmpty() ? QStringLiteral("Waiting for the server")
+                                                         : watchdog->step;
+        worker->abortConnection();
+    });
+}
+
+QString FileBrowserPane::stalledMessage(const QString &step) const
+{
+    QString message = QString("The server stopped answering. No response for %1 seconds at: %2.")
+                          .arg(kStallSeconds).arg(step);
+    if (step == "Starting SFTP") {
+        message += QString("\n\nThe login worked, but the server's SFTP service never replied. "
+                           "This usually means a script that runs at login on the server "
+                           "(such as ~/.bashrc) waits for input or runs a long command even "
+                           "without a terminal. Running \"sftp %1@%2\" in a terminal "
+                           "should hang the same way.")
+                       .arg(m_connection.username, m_connection.host);
+    }
+    return message;
 }
 
 QWidget *FileBrowserPane::createRemoteSection()
@@ -349,7 +406,9 @@ void FileBrowserPane::onConnected(const QString &homePath)
 
 void FileBrowserPane::onConnectionFailed(const QString &error)
 {
-    setRemoteStatus(error + "\n\nPress Refresh to try again.", true);
+    QString message = m_browseWatchdog.stalledStep.isEmpty()
+        ? error : stalledMessage(m_browseWatchdog.stalledStep);
+    setRemoteStatus(message + "\n\nPress Refresh to try again.", true);
 }
 
 void FileBrowserPane::navigateRemote(const QString &path)
@@ -395,7 +454,9 @@ void FileBrowserPane::onListingFailed(const QString &path, const QString &error)
     if (path != m_requestedPath) return;
     m_requestedPath = m_remoteModel->path();
     m_remotePathEdit->setText(m_remoteModel->path());
-    setRemoteStatus(QString("Could not open %1: %2").arg(path, error), true);
+    QString reason = m_browseWatchdog.stalledStep.isEmpty()
+        ? error : stalledMessage(m_browseWatchdog.stalledStep);
+    setRemoteStatus(QString("Could not open %1: %2").arg(path, reason), true);
 }
 
 void FileBrowserPane::openRemoteEntry(const RemoteEntry &entry)
@@ -482,6 +543,7 @@ SftpWorker *FileBrowserPane::transferWorker()
         m_transferWorker->moveToThread(m_transferThread);
         connect(m_transferWorker, &SftpWorker::downloadProgress, this, &FileBrowserPane::onDownloadProgress);
         connect(m_transferWorker, &SftpWorker::downloadFinished, this, &FileBrowserPane::onDownloadFinished);
+        watch(m_transferWorker, &m_transferWatchdog);
         m_transferThread->start();
     }
     return m_transferWorker;
@@ -555,6 +617,9 @@ void FileBrowserPane::onDownloadFinished(int jobId, bool success, const QString 
     auto it = m_transfers.find(jobId);
     if (it == m_transfers.end()) return;
 
+    QString reason = success || m_transferWatchdog.stalledStep.isEmpty()
+        ? error : stalledMessage(m_transferWatchdog.stalledStep);
+
     it->finished = true;
     it->bar->setRange(0, 100);
     if (success) {
@@ -565,7 +630,7 @@ void FileBrowserPane::onDownloadFinished(int jobId, bool success, const QString 
         it->bar->setValue(0);
         it->bar->setFormat(error == "Cancelled" ? "Cancelled" : "Failed");
         it->item->setText(2, error == "Cancelled" ? "Cancelled" : "Failed");
-        it->item->setToolTip(2, error);
+        it->item->setToolTip(2, reason);
         it->item->setForeground(2, QBrush(QColor("#c0392b")));
     }
 }
