@@ -236,6 +236,20 @@ void TerminalWindow::refreshConnectionTree()
 
 void TerminalWindow::addNewConnection()
 {
+    // Start in the folder selected in the tree: the folder itself, or the
+    // folder of the selected connection
+    if (QTreeWidgetItem *current = connectionTree->currentItem()) {
+        QString folderName = current->data(0, Qt::UserRole + 2).toString();
+        QVariant connectionData = current->data(0, Qt::UserRole);
+        if (folderName.isEmpty() && connectionData.canConvert<SSHConnection>()) {
+            folderName = qvariant_cast<SSHConnection>(connectionData).folder;
+        }
+        if (!folderName.isEmpty()) {
+            addConnectionToFolder(folderName);
+            return;
+        }
+    }
+
     ConnectionDialog dialog(this);
     dialog.setAvailableFolders(getExistingFolders());
     
