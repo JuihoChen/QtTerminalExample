@@ -8,6 +8,11 @@
 #include <QApplication>
 #include <QStatusBar>
 #include <QClipboard>
+#include <QDir>
+#include <QFileDialog>
+#include <QSettings>
+
+static const char *kStartFolderSetting = "terminal/startFolder";
 
 QTermWidget* TerminalWindow::createTerminalWidget()
 {
@@ -20,6 +25,7 @@ QTermWidget* TerminalWindow::createTerminalWidget()
     terminal->setScrollBarPosition(QTermWidget::ScrollBarRight);
     terminal->setMotionAfterPasting(2);
     terminal->setContextMenuPolicy(Qt::CustomContextMenu);
+    terminal->setWorkingDirectory(startFolder());
     
     // Common signal connections
     connect(terminal, &QWidget::customContextMenuRequested, 
@@ -36,6 +42,7 @@ QTermWidget* TerminalWindow::createTerminal()
     
     // Local terminal specific settings
     terminal->setShellProgram("/bin/bash");
+    terminal->startShellProgram();
     
     return terminal;
 }
@@ -83,6 +90,23 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     });
 
     return terminal;
+}
+
+// Folder new terminals start in: the saved choice, or home if unset or no longer there
+QString TerminalWindow::startFolder() const
+{
+    QString folder = QSettings().value(kStartFolderSetting).toString();
+    if (folder.isEmpty() || !QDir(folder).exists()) return QDir::homePath();
+    return folder;
+}
+
+void TerminalWindow::chooseStartFolder()
+{
+    QString folder = QFileDialog::getExistingDirectory(this, "Start New Terminals In", startFolder());
+    if (folder.isEmpty()) return;
+
+    QSettings().setValue(kStartFolderSetting, folder);
+    statusBar()->showMessage("New terminals will start in " + folder, 5000);
 }
 
 QTermWidget* TerminalWindow::getCurrentTerminal()
