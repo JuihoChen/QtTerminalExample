@@ -13,6 +13,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt5 COMPONENTS Core Widgets Gui REQUIRED)
 
+# libssh provides SFTP for the file browser
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBSSH REQUIRED IMPORTED_TARGET libssh>=0.9)
+
 option(USE_STATIC_QTERMWIDGET "Use static QTermWidget with fixes" ON)
 
 add_executable(QtTerminalExample
@@ -26,6 +30,9 @@ add_executable(QtTerminalExample
     terminalwindow_filetransfer.cpp
     terminalwindow_filebrowser.cpp
     terminalwindow_menus.cpp
+    sftpworker.cpp
+    remotefilemodel.cpp
+    filebrowserpane.cpp
     connectiondialog.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
@@ -72,6 +79,7 @@ target_link_libraries(QtTerminalExample
     Qt5::Core
     Qt5::Widgets 
     Qt5::Gui
+    PkgConfig::LIBSSH
     # Link directly to the target, which resolves dependencies automatically
     ${QTERMWIDGET_LIBRARY}
 )

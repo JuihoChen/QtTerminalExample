@@ -66,6 +66,8 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
                     tabWidget->setTabText(tabIndex, "Terminal");
                     terminal->setProperty("isSSHTerminal", false);
                     terminal->setProperty("sshConnection", QVariant());
+                    if (terminal == getCurrentTerminal()) updateFileBrowser();
+                    else removeFileBrowserPane(terminal);
                     statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
                 }
             }
@@ -118,6 +120,8 @@ void TerminalWindow::closeTab(int index)
     }
     
     QWidget *widget = tabWidget->widget(index);
+    if (!confirmCloseWithTransfers(widget)) return;
+    removeFileBrowserPane(widget);
     tabWidget->removeTab(index);
     widget->deleteLater();
     
@@ -133,6 +137,7 @@ void TerminalWindow::onTabChanged(int index)
 {
     Q_UNUSED(index)
     updateStatusBar();
+    if (fileBrowserDock) updateFileBrowser();
     
     // Focus the current terminal
     QTermWidget *terminal = getCurrentTerminal();
@@ -172,6 +177,8 @@ void TerminalWindow::onTerminalFinished()
         // Mark as normal terminal now (the shell is still running locally)
         finishedTerminal->setProperty("isSSHTerminal", false);
         finishedTerminal->setProperty("sshConnection", QVariant());
+        if (finishedTerminal == getCurrentTerminal()) updateFileBrowser();
+        else removeFileBrowserPane(finishedTerminal);
         
         // Show message in status bar
         statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
