@@ -77,6 +77,8 @@ signals:
 private:
     bool ensureConnected(QString *error);
     bool authenticate(QString *error);
+    bool authenticateWithKeys(int methods, QStringList *tried);
+    bool authenticateWithPassword(int methods, QStringList *tried);
     bool verifyHostKey(QString *error);
     QString sftpError() const;
     bool isCancelled(int jobId);
