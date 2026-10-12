@@ -1,6 +1,8 @@
 // Table model for one remote folder listing
 #include "remotefilemodel.h"
 
+#include <QFont>
+
 #include <QDataStream>
 #include <QLocale>
 #include <QMimeData>
@@ -67,6 +69,11 @@ QVariant RemoteFileModel::data(const QModelIndex &index, int role) const
         }
         if (role == Qt::ToolTipRole && !up) {
             return e.isLink ? QString("%1 (link)").arg(e.path) : e.path;
+        }
+        if (role == Qt::FontRole && e.isLink) {
+            QFont font;
+            font.setItalic(true);
+            return font;
         }
         break;
     case SizeColumn:
