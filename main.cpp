@@ -7,6 +7,11 @@ int main(int argc, char *argv[])
     // Force X11 platform to avoid Wayland issues
     qputenv("QT_QPA_PLATFORM", "xcb");
     
+    // Programs in the terminals need TERM; a desktop launcher does not set it
+    if (qEnvironmentVariableIsEmpty("TERM")) {
+        qputenv("TERM", "xterm-256color");
+    }
+
     QApplication app(argc, argv);
     
     app.setOrganizationName("MyCompany");
