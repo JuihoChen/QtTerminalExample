@@ -122,27 +122,7 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection,
     scpProgressDialog->show();
 
     // Build safe SCP command for UPLOAD
-    QString scpCommand;
-    if (!connection.password.isEmpty()) {
-        scpCommand = QString("sshpass -p %1 ").arg(CommandSafetyHelper::escapeShellArgument(connection.password));
-    }
-
-    if (connection.port == 22) {
-        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
-                             "-o StrictHostKeyChecking=accept-new %1 %2@%3:%4")
-                     .arg(CommandSafetyHelper::escapeShellArgument(localFile),
-                          CommandSafetyHelper::escapeShellArgument(connection.username),
-                          CommandSafetyHelper::escapeShellArgument(connection.host),
-                          CommandSafetyHelper::escapeShellArgument(remotePath));
-    } else {
-        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
-                             "-o StrictHostKeyChecking=accept-new -P %1 %2 %3@%4:%5")
-                     .arg(connection.port)
-                     .arg(CommandSafetyHelper::escapeShellArgument(localFile),
-                          CommandSafetyHelper::escapeShellArgument(connection.username),
-                          CommandSafetyHelper::escapeShellArgument(connection.host),
-                          CommandSafetyHelper::escapeShellArgument(remotePath));
-    }
+    QString scpCommand = CommandSafetyHelper::buildSafeSCPCommand(connection, localFile, remotePath, true);
     
     // Execute with improved error handling
     QProcess *scpProcess = new QProcess(this);
@@ -202,27 +182,7 @@ void TerminalWindow::performSCPDownload(const SSHConnection &connection, const Q
     scpProgressDialog->show();
     
     // Build safe SCP command for DOWNLOAD
-    QString scpCommand;
-    if (!connection.password.isEmpty()) {
-        scpCommand = QString("sshpass -p %1 ").arg(CommandSafetyHelper::escapeShellArgument(connection.password));
-    }
-
-    if (connection.port == 22) {
-        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
-                             "-o StrictHostKeyChecking=accept-new %1@%2:%3 %4")
-                     .arg(CommandSafetyHelper::escapeShellArgument(connection.username),
-                          CommandSafetyHelper::escapeShellArgument(connection.host),
-                          CommandSafetyHelper::escapeShellArgument(remoteFile),
-                          CommandSafetyHelper::escapeShellArgument(localFile));
-    } else {
-        scpCommand += QString("scp -o ServerAliveInterval=60 -o ServerAliveCountMax=3 "
-                             "-o StrictHostKeyChecking=accept-new -P %1 %2@%3:%4 %5")
-                     .arg(connection.port)
-                     .arg(CommandSafetyHelper::escapeShellArgument(connection.username),
-                          CommandSafetyHelper::escapeShellArgument(connection.host),
-                          CommandSafetyHelper::escapeShellArgument(remoteFile),
-                          CommandSafetyHelper::escapeShellArgument(localFile));
-    }
+    QString scpCommand = CommandSafetyHelper::buildSafeSCPCommand(connection, localFile, remoteFile, false);
 
     // Execute with improved error handling
     QProcess *scpProcess = new QProcess(this);
@@ -280,19 +240,8 @@ void TerminalWindow::browseRemoteFiles(const SSHConnection &connection)
         if (!ok || browsePath.isEmpty()) return;
         
         // Build SSH ls command
-        QString lsCommand;
-        if (!connection.password.isEmpty()) {
-            lsCommand = QString("sshpass -p '%1' ").arg(connection.password);
-        }
-        
-        if (connection.port == 22) {
-            lsCommand += QString("ssh %1@%2 'ls -la \"%3\"'")
-                        .arg(connection.username, connection.host, browsePath);
-        } else {
-            lsCommand += QString("ssh -p %1 %2@%3 'ls -la \"%4\"'")
-                        .arg(connection.port)
-                        .arg(connection.username, connection.host, browsePath);
-        }
+        QString lsCommand = CommandSafetyHelper::buildSafeSSHCommand(connection,
+            QString("ls -la %1").arg(CommandSafetyHelper::escapeShellArgument(browsePath)));
         
         // Execute and show results
         QProcess *lsProcess = new QProcess(this);

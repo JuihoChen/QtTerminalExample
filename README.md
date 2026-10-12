@@ -12,6 +12,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **📋 Connection Details Panel** - Live connection information with quick-connect buttons
 - **📁 Visual Connection Organization** - Folder structure with distinctive emoji icons
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
+- **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
 - **📤📥 File Transfer Capabilities** - SCP upload/download with visual file browser
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
@@ -24,7 +25,6 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **💡 Smart Connection Validation** - Input validation and error handling with helpful feedback
 
 ### 🚧 Planned Features
-- **🔐 SSH Key Management** - Integration with SSH agent and key files
 - **📈 Connection History** - Track and quick-access recent connections
 - **🔍 Quick Connect Search** - Fast connection search and filtering
 - **🎯 Import/Export** - Share connection configurations (JSON, CSV, other formats)
@@ -71,6 +71,7 @@ The bottom-left panel shows comprehensive connection information:
 - **Connection Name** - Display name with folder context
 - **Host Information** - Hostname/IP address and port
 - **Authentication** - Username and password status (shows masked password if saved)
+- **SSH Key** - Key file name and whether the SSH agent is used (or "Not used")
 - **Quick Actions** - Connect, Edit, and Delete buttons
 - **Real-time Updates** - Panel updates automatically when selecting different connections
 
@@ -93,6 +94,26 @@ The bottom-left panel shows comprehensive connection information:
 - **Known Hosts Integration** - New keys automatically added to `~/.ssh/known_hosts`
 - **Security Balance** - Prevents hanging on first connections while maintaining security for changed keys
 - **Manual Override** - Pre-populate known_hosts for maximum security if desired
+
+## SSH Key Authentication
+
+Open a connection with **Edit** (or create one with **New Connection**) and switch to the **🔑 SSH Key** tab in the Connection Details:
+
+- **Use SSH key authentication** - Turns the key options on for this connection
+- **Private key** - Browse for a private key file (defaults to `~/.ssh`); it is passed to `ssh` and `scp` as `-i`. Leave it empty to use the agent and ssh's default keys (`~/.ssh/id_*`)
+- **Use SSH agent** - Lets ssh use keys loaded in `ssh-agent` (`SSH_AUTH_SOCK`). Unchecked, the agent is ignored (`-o IdentityAgent=none`) and only the chosen key file is offered (`-o IdentitiesOnly=yes`)
+- **Check Key** - Shows the key's type and fingerprint (`ssh-keygen -l`)
+
+The tab checks the key as you pick it and warns when the file is missing, is a `.pub` public key, or has permissions that OpenSSH would refuse (fix with `chmod 600`). It also shows whether an agent is running.
+
+The key settings apply to terminals, SCP upload/download and the remote file browser. A saved password is still used by `sshpass` as a fallback if the server does not accept the key. Settings are saved with the connection in `connections.json` (`useKeyAuth`, `identityFile`, `useAgent`); connections saved by older versions load with key authentication off.
+
+To set up a key for a server:
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
+ssh-copy-id -i ~/.ssh/id_ed25519.pub user@hostname
+ssh-add ~/.ssh/id_ed25519   # optional: load it into ssh-agent
+```
 
 ## File Transfer Capabilities
 
@@ -404,7 +425,10 @@ QtTerminalExample/
 
 ## Version History
 
-### v0.5 (Current)
+### v0.6 (Current)
+- ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks
+
+### v0.5
 - ✅ **Split-Pane Interface** - Three-panel layout with connection tree, details panel, and terminals
 - ✅ **Connection Details Panel** - Live connection information with quick-action buttons
 - ✅ **Enhanced File Transfer** - Visual remote file browser with directory navigation
@@ -441,7 +465,7 @@ QtTerminalExample/
 
 2. **SSH Keys Preferred** - For production environments:
    ```bash
-   ssh-keygen -t ed25519 -b 4096
+   ssh-keygen -t ed25519
    ssh-copy-id user@hostname
    ```
 
@@ -476,7 +500,7 @@ QtTerminalExample/
 | Remote File Browser | ✅ Complete | Directory navigation with file type icons |
 | Error Handling | ✅ Complete | Comprehensive error messages and recovery |
 | **Advanced Features** |  |  |
-| SSH Key Support | 🚧 Planned | Integration with SSH agent and key files |
+| SSH Key Support | ✅ Complete | Per-connection key file (`ssh -i`) and SSH agent integration |
 | Password Encryption | 🚧 Planned | Secure encrypted storage implementation |
 | Connection History | 🚧 Planned | Recent connections and usage tracking |
 | Import/Export | 🚧 Planned | Configuration sharing and migration tools |

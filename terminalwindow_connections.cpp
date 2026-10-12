@@ -88,6 +88,9 @@ void TerminalWindow::loadConnections()
         conn.password = connObj["password"].toString(); // Load password field
         conn.port = connObj["port"].toInt(22);
         conn.folder = connObj["folder"].toString();
+        conn.useKeyAuth = connObj["useKeyAuth"].toBool(false);
+        conn.identityFile = connObj["identityFile"].toString();
+        conn.useAgent = connObj["useAgent"].toBool(true);
         connections.append(conn);
     }
     
@@ -117,6 +120,9 @@ void TerminalWindow::saveConnections()
         connObj["password"] = conn.password; // Save password field
         connObj["port"] = conn.port;
         connObj["folder"] = conn.folder;
+        connObj["useKeyAuth"] = conn.useKeyAuth;
+        connObj["identityFile"] = conn.identityFile;
+        connObj["useAgent"] = conn.useAgent;
         connectionsArray.append(connObj);
     }
     
@@ -212,6 +218,9 @@ void TerminalWindow::refreshConnectionTree()
         QString tooltip = QString("%1@%2:%3").arg(conn.username, conn.host).arg(conn.port);
         if (!conn.password.isEmpty()) {
             tooltip += " (password saved)";
+        }
+        if (conn.useKeyAuth) {
+            tooltip += " (SSH key)";
         }
         item->setToolTip(0, tooltip);
         
