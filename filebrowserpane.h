@@ -112,6 +112,7 @@ private:
         QString refreshDir;  // Remote folder to reload when an upload ends
         QString editPath;    // Local copy, for a file opened with Edit
         bool editUpload;     // Saving an edited file back to the server
+        bool viewOnly;       // Local copy for View: read-only, never uploaded
     };
 
     // A remote file opened with Edit: a local copy, watched for saves
@@ -147,6 +148,8 @@ private:
     SftpWorker *transferWorker();
 
     void editRemoteFile(const RemoteEntry &entry);
+    void viewRemoteFile(const RemoteEntry &entry);
+    QString newLocalCopyPath(const QString &name);
     bool chooseEditor();
     void openInEditor(const QString &localPath);
     void watchEditedFile(const QString &localPath);

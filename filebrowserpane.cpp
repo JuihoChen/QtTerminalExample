@@ -396,6 +396,15 @@ QWidget *FileBrowserPane::createRemoteSection()
     });
     m_remoteView->addAction(openAction);
 
+    QAction *viewAction = new QAction(m_remoteView);
+    viewAction->setShortcut(Qt::Key_F3);
+    viewAction->setShortcutContext(Qt::WidgetShortcut);
+    connect(viewAction, &QAction::triggered, this, [this]() {
+        QVector<RemoteEntry> entries = selectedRemoteEntries();
+        if (entries.size() == 1 && !entries.first().isDir) viewRemoteFile(entries.first());
+    });
+    m_remoteView->addAction(viewAction);
+
     QAction *editAction = new QAction(m_remoteView);
     editAction->setShortcut(Qt::Key_F4);
     editAction->setShortcutContext(Qt::WidgetShortcut);
@@ -620,6 +629,9 @@ void FileBrowserPane::showRemoteContextMenu(const QPoint &pos)
         }
         if (entries.size() == 1 && !entries.first().isDir) {
             RemoteEntry file = entries.first();
+            QAction *view = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogContentsView),
+                                           "View", this, [this, file]() { viewRemoteFile(file); });
+            view->setShortcut(Qt::Key_F3);
             QAction *edit = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogDetailedView),
                                            "Edit", this, [this, file]() { editRemoteFile(file); });
             edit->setShortcut(Qt::Key_F4);
@@ -801,7 +813,7 @@ int FileBrowserPane::addTransfer(const QString &name, bool isDir, bool upload, c
     bar->setMaximumHeight(m_transferList->fontMetrics().height() + 4);
     m_transferList->setItemWidget(item, 1, bar);
 
-    Transfer transfer = { item, bar, false, QString(), QString(), false };
+    Transfer transfer = { item, bar, false, QString(), QString(), false, false };
     m_transfers.insert(jobId, transfer);
     m_transferList->scrollToBottom();
     return jobId;
@@ -830,6 +842,7 @@ void FileBrowserPane::onTransferFinished(int jobId, bool success, const QString 
     QString refreshDir = it->refreshDir;
     QString editPath = it->editPath;
     bool editUpload = it->editUpload;
+    bool viewOnly = it->viewOnly;
 
     QString reason = success || m_transferWatchdog.stalledStep.isEmpty()
         ? error : stalledMessage(m_transferWatchdog.stalledStep);
@@ -846,6 +859,13 @@ void FileBrowserPane::onTransferFinished(int jobId, bool success, const QString 
         it->item->setText(2, error == "Cancelled" ? "Cancelled" : "Failed");
         it->item->setToolTip(2, reason);
         it->item->setForeground(2, QBrush(QColor("#c0392b")));
+    }
+
+    if (viewOnly && success) {
+        // Read-only, so the editor says so and a save can't be mistaken
+        // for one that reaches the server
+        QFile::setPermissions(editPath, QFileDevice::ReadOwner | QFileDevice::ReadUser);
+        openInEditor(editPath);
     }
 
     if (!editPath.isEmpty() && m_edits.contains(editPath)) {
@@ -898,21 +918,8 @@ void FileBrowserPane::editRemoteFile(const RemoteEntry &entry)
         return;  // Already open, or still downloading
     }
 
-    if (!m_editDir) {
-        m_editDir = new QTemporaryDir(QDir::temp().filePath("qtterminal-edit-XXXXXX"));
-        if (!m_editDir->isValid()) {
-            QMessageBox::warning(this, "Edit", QString("Could not create a temporary folder: %1")
-                                                   .arg(m_editDir->errorString()));
-            delete m_editDir;
-            m_editDir = nullptr;
-            return;
-        }
-    }
-    // A folder per file keeps its name, so the editor can pick the right
-    // highlighting, even when two remote files share a name
-    QString dir = m_editDir->filePath(QString::number(m_nextEditDir++));
-    QDir().mkpath(dir);
-    QString localPath = QDir(dir).filePath(entry.name);
+    QString localPath = newLocalCopyPath(entry.name);
+    if (localPath.isEmpty()) return;
 
     EditedFile edit;
     edit.remotePath = entry.path;
@@ -923,6 +930,41 @@ void FileBrowserPane::editRemoteFile(const RemoteEntry &entry)
     m_transfers[jobId].editPath = localPath;
     QMetaObject::invokeMethod(transferWorker(), "download", Qt::QueuedConnection,
                               Q_ARG(int, jobId), Q_ARG(RemoteEntry, entry), Q_ARG(QString, localPath));
+}
+
+// Opens a fresh, read-only copy each time, so it shows the server's current
+// version; nothing is uploaded
+void FileBrowserPane::viewRemoteFile(const RemoteEntry &entry)
+{
+    QString localPath = newLocalCopyPath(entry.name);
+    if (localPath.isEmpty()) return;
+
+    int jobId = addTransfer(entry.name, false, false, QString("%1\n→ viewing in %2")
+                                .arg(entry.path, QDir::toNativeSeparators(localPath)));
+    m_transfers[jobId].editPath = localPath;
+    m_transfers[jobId].viewOnly = true;
+    QMetaObject::invokeMethod(transferWorker(), "download", Qt::QueuedConnection,
+                              Q_ARG(int, jobId), Q_ARG(RemoteEntry, entry), Q_ARG(QString, localPath));
+}
+
+// A path in the pane's private temporary folder, deleted with the pane
+QString FileBrowserPane::newLocalCopyPath(const QString &name)
+{
+    if (!m_editDir) {
+        m_editDir = new QTemporaryDir(QDir::temp().filePath("qtterminal-edit-XXXXXX"));
+        if (!m_editDir->isValid()) {
+            QMessageBox::warning(this, "Edit", QString("Could not create a temporary folder: %1")
+                                                   .arg(m_editDir->errorString()));
+            delete m_editDir;
+            m_editDir = nullptr;
+            return QString();
+        }
+    }
+    // A folder per file keeps its name, so the editor can pick the right
+    // highlighting, even when two remote files share a name
+    QString dir = m_editDir->filePath(QString::number(m_nextEditDir++));
+    QDir().mkpath(dir);
+    return QDir(dir).filePath(name);
 }
 
 bool FileBrowserPane::chooseEditor()

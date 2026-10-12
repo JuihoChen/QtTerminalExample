@@ -123,7 +123,8 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 - **Remote folder (top)** - The server's files with size, modified time, permissions and owner. Double-click a folder (or press `Enter`) to open it, `Backspace` or the ↑ button to go up, or type a path and press `Enter`. Click a column to sort; folders stay on top.
 - **Local folder (middle)** - Where downloads go. Drag files or folders from the remote list and drop them here, or onto a local subfolder. Double-click to move between local folders.
 - **Upload** - Drag files or folders from the local list, or from your file manager, onto the remote list (or onto a remote subfolder). Or right-click the remote list → **Upload Files...** / **Upload Folder...**, or right-click local files → **Upload to <remote folder>**. Replacing a file on the server asks first when it's in the folder you're looking at; folders are merged.
-- **Edit** - Select a remote file and press `F4`, or right-click → **Edit**. It opens in your editor, and every time you save there it's uploaded back to the server, like WinSCP. **Edit With...** sets the editor command (such as `gedit`, `kate`, `code` or `xterm -e vim`); left empty, the system's default application for the file type is used. The local copy is kept in a private temporary folder and deleted when the tab closes, so save before closing it.
+- **View** - Select a remote file and press `F3`, or right-click → **View**. It opens a read-only copy in your editor; nothing goes back to the server.
+- **Edit** - Select a remote file and press `F4`, or right-click → **Edit**. It opens in your editor, and every time you save there it's uploaded back to the server, like WinSCP. **Edit With...** sets the editor command (used by View too) (such as `gedit`, `kate`, `code` or `xterm -e vim`); left empty, the system's default application for the file type is used. The local copy is kept in a private temporary folder and deleted when the tab closes, so save before closing it.
 - **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder), **Edit** and **Copy Path**. Double-clicking a remote file also downloads it.
 - **Transfers (bottom)** - Each download (↓) and upload (↑) with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders transfer with everything inside them.
 
@@ -322,6 +323,7 @@ All SSH connections use optimized settings:
 | File Browser | `Ctrl+Shift+B` | Global |
 | Open folder / download file | `Enter` | Remote file list |
 | Parent folder | `Backspace` | Remote file list |
+| View remote file | `F3` | Remote file list |
 | Edit remote file | `F4` | Remote file list |
 
 ## Troubleshooting
@@ -435,7 +437,7 @@ QtTerminalExample/
 
 ### v0.7 (Current)
 - ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and uploads and a transfer list; replaces the Browse/Download dialogs
-- ✅ **Edit remote files** - `F4` opens a remote file in your editor and uploads it on every save
+- ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
 
 ### v0.6
 - ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks
