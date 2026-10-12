@@ -1,9 +1,11 @@
 #ifndef CONNECTIONVALIDATOR_H
 #define CONNECTIONVALIDATOR_H
 
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
 #include "sshconnection.h"
+#include "commandsafety.h"
 
 class ConnectionValidator {
 public:
@@ -43,7 +45,15 @@ public:
         }
         
         // Warnings for common issues
-        if (connection.password.isEmpty()) {
+        if (connection.useKeyAuth) {
+            QString keyFile = CommandSafetyHelper::expandHomePath(connection.identityFile);
+            if (!keyFile.isEmpty() && !QFileInfo(keyFile).isReadable()) {
+                result.warnings.append(QString("SSH key file not readable: %1").arg(keyFile));
+            }
+            if (keyFile.isEmpty() && !connection.useAgent) {
+                result.warnings.append("SSH key authentication has no key file and the SSH agent is disabled");
+            }
+        } else if (connection.password.isEmpty()) {
             result.warnings.append("No password set - you'll need to enter it manually");
         }
         

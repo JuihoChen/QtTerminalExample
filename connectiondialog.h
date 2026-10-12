@@ -14,6 +14,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QCheckBox>
+#include <QTabWidget>
 
 struct SSHConnection; // Forward declaration
 
@@ -32,9 +33,14 @@ private slots:
     void validateInput();
     void onTestConnection();
     void onShowPasswordChanged(bool show);
+    void onBrowseIdentityFile();
+    void onCheckIdentityFile();
+    void updateKeyAuthState();
 
 private:
     void setupUI();
+    QWidget *createGeneralTab();
+    QWidget *createSSHKeyTab();
     void populateFields(const SSHConnection &connection);
     
     QLineEdit *nameEdit;
@@ -44,6 +50,16 @@ private:
     QCheckBox *showPasswordCheck;  // Added show password checkbox
     QSpinBox *portSpinBox;
     QComboBox *folderCombo;
+    QTabWidget *detailsTabs;
+
+    // SSH Key tab
+    QCheckBox *useKeyAuthCheck;
+    QLineEdit *identityFileEdit;
+    QPushButton *browseIdentityButton;
+    QPushButton *checkIdentityButton;
+    QLabel *identityStatusLabel;
+    QCheckBox *useAgentCheck;
+    QLabel *agentStatusLabel;
     QPushButton *testButton;
     QDialogButtonBox *buttonBox;
     

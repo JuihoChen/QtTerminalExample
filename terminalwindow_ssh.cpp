@@ -5,6 +5,7 @@
 #include <QStatusBar>
 #include <QPushButton>
 #include <QLabel>
+#include <QFileInfo>
 
 // Updated double-click handler for actual SSH connection
 void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column)
@@ -36,7 +37,9 @@ void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column
     QString statusMessage = QString("Connecting to %1@%2:%3...")
                            .arg(connection.username, connection.host)
                            .arg(connection.port);
-    if (!connection.password.isEmpty()) {
+    if (connection.useKeyAuth) {
+        statusMessage += " (using SSH key)";
+    } else if (!connection.password.isEmpty()) {
         statusMessage += " (using saved password)";
     }
     statusBar()->showMessage(statusMessage, 5000);
@@ -93,6 +96,24 @@ void TerminalWindow::updateConnectionConfig(const SSHConnection &connection)
         configPasswordLabel->setStyleSheet("QLabel { color: #333; }");
     }
     
+    // Show which key authentication is configured
+    if (!connection.useKeyAuth) {
+        configKeyLabel->setText("Not used");
+        configKeyLabel->setToolTip(QString());
+        configKeyLabel->setStyleSheet("QLabel { color: #999; font-style: italic; }");
+    } else {
+        QStringList parts;
+        if (!connection.identityFile.isEmpty()) {
+            parts << QFileInfo(connection.identityFile).fileName();
+        }
+        if (connection.useAgent) {
+            parts << "agent";
+        }
+        configKeyLabel->setText(parts.isEmpty() ? "Default keys" : parts.join(" + "));
+        configKeyLabel->setToolTip(connection.identityFile);
+        configKeyLabel->setStyleSheet("QLabel { color: #333; }");
+    }
+    
     // Enable action buttons
     quickConnectButton->setEnabled(true);
     editConnectionButton->setEnabled(true);
@@ -108,6 +129,9 @@ void TerminalWindow::clearConnectionConfig()
     configUsernameLabel->setText("-");
     configPortLabel->setText("-");
     configPasswordLabel->setText("-");
+    configKeyLabel->setText("-");
+    configKeyLabel->setToolTip(QString());
+    configKeyLabel->setStyleSheet("QLabel { color: #333; }");
     configFolderLabel->setText("-");
     
     // Reset password label style
@@ -145,7 +169,9 @@ void TerminalWindow::onQuickConnectClicked()
     QString statusMessage = QString("Connecting to %1@%2:%3...")
                            .arg(selectedConnection.username, selectedConnection.host)
                            .arg(selectedConnection.port);
-    if (!selectedConnection.password.isEmpty()) {
+    if (selectedConnection.useKeyAuth) {
+        statusMessage += " (using SSH key)";
+    } else if (!selectedConnection.password.isEmpty()) {
         statusMessage += " (using saved password)";
     }
     statusBar()->showMessage(statusMessage, 5000);

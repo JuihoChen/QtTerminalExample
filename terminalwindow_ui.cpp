@@ -180,6 +180,10 @@ void TerminalWindow::setupConnectionConfigPanel()
     configPasswordLabel->setStyleSheet("QLabel { color: #333; }");
     formLayout->addRow("Password:", configPasswordLabel);
     
+    configKeyLabel = new QLabel("-", this);
+    configKeyLabel->setStyleSheet("QLabel { color: #333; }");
+    formLayout->addRow("SSH Key:", configKeyLabel);
+    
     configFolderLabel = new QLabel("-", this);
     configFolderLabel->setStyleSheet("QLabel { color: #333; }");
     formLayout->addRow("Folder:", configFolderLabel);

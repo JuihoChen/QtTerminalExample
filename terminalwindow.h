@@ -130,6 +130,7 @@ private:
     QLabel *configPortLabel;
     QLabel *configFolderLabel;
     QLabel *configPasswordLabel;
+    QLabel *configKeyLabel;
     QPushButton *quickConnectButton;
     QPushButton *editConnectionButton;
     QPushButton *deleteConnectionButton;
