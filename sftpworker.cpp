@@ -16,7 +16,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <cerrno>
 #include <cstring>
+#include <unistd.h>
 
 namespace {
 
@@ -431,6 +433,7 @@ bool SftpWorker::readDirectory(const QString &path, QVector<RemoteEntry> *entrie
         entry.group = attr->group ? QString::fromUtf8(attr->group) : QString::number(attr->gid);
         entry.isLink = attr->type == SSH_FILEXFER_TYPE_SYMLINK;
         entry.isDir = attr->type == SSH_FILEXFER_TYPE_DIRECTORY;
+        entry.isSpecial = attr->type == SSH_FILEXFER_TYPE_SPECIAL;
         sftp_attributes_free(attr);
 
         if (entry.isLink) {
@@ -438,6 +441,7 @@ bool SftpWorker::readDirectory(const QString &path, QVector<RemoteEntry> *entrie
             sftp_attributes target = sftp_stat(m_sftp, entry.path.toUtf8().constData());
             if (target) {
                 entry.isDir = target->type == SSH_FILEXFER_TYPE_DIRECTORY;
+                entry.isSpecial = target->type == SSH_FILEXFER_TYPE_SPECIAL;
                 if (!entry.isDir) entry.size = target->size;
                 sftp_attributes_free(target);
             }
@@ -496,15 +500,19 @@ void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &lo
     m_progressTimer.start();
     emit transferProgress(jobId, 0, entry.isDir ? 0 : entry.size);
     bool ok;
+    QStringList skipped;
     if (entry.isDir) {
-        ok = downloadTree(jobId, entry, localPath, &done, &error);
+        ok = downloadTree(jobId, entry, localPath, &done, &skipped, &error);
+    } else if (entry.isSpecial) {
+        ok = false;
+        error = "Not a regular file (a pipe, socket or device), so it can't be copied";
     } else {
         ok = downloadFile(jobId, entry, localPath, &done, entry.size, &error);
     }
     if (!ok && ssh_is_connected(m_session) == 0) {
         disconnectFromServer();  // Reconnect for the next transfer
     }
-    emit transferFinished(jobId, ok, ok ? QString() : error);
+    emit transferFinished(jobId, ok, ok ? skipped.join('\n') : error);
 }
 
 void SftpWorker::upload(int jobId, const QString &localPath, const QString &remotePath)
@@ -525,15 +533,16 @@ void SftpWorker::upload(int jobId, const QString &localPath, const QString &remo
     m_progressTimer.start();
     emit transferProgress(jobId, 0, info.isDir() ? 0 : quint64(info.size()));
     bool ok;
+    QStringList skipped;
     if (info.isDir()) {
-        ok = uploadTree(jobId, localPath, remotePath, &done, &error);
+        ok = uploadTree(jobId, localPath, remotePath, &done, &skipped, &error);
     } else {
         ok = uploadFile(jobId, localPath, remotePath, &done, quint64(info.size()), &error);
     }
     if (!ok && ssh_is_connected(m_session) == 0) {
         disconnectFromServer();
     }
-    emit transferFinished(jobId, ok, ok ? QString() : error);
+    emit transferFinished(jobId, ok, ok ? skipped.join('\n') : error);
 }
 
 // Progress at most ten times a second, so a fast link doesn't flood the UI
@@ -545,12 +554,28 @@ void SftpWorker::reportProgress(int jobId, quint64 bytesDone, quint64 bytesTotal
     }
 }
 
+// Stops a folder transfer only for what ends all of it: a cancel, or a lost
+// connection. Anything else skips the one item and carries on.
+bool SftpWorker::canContinue(int jobId, QString *error)
+{
+    if (isCancelled(jobId)) {
+        *error = "Cancelled";
+        return false;
+    }
+    if (wasAborted() || ssh_is_connected(m_session) == 0) {
+        if (error->isEmpty()) *error = "Connection lost";
+        return false;
+    }
+    return true;
+}
+
 bool SftpWorker::downloadTree(int jobId, const RemoteEntry &root, const QString &localRoot,
-                              quint64 *bytesDone, QString *error)
+                              quint64 *bytesDone, QStringList *skipped, QString *error)
 {
     // Walk the folder first so progress can show the full size
     QStringList localDirs;
     QList<PendingFile> files;
+    QList<PendingFile> links;
     quint64 total = 0;
 
     QQueue<PendingFile> pending;
@@ -561,19 +586,31 @@ bool SftpWorker::downloadTree(int jobId, const RemoteEntry &root, const QString 
             return false;
         }
         PendingFile dir = pending.dequeue();
-        localDirs << dir.localPath;
         emit step("Reading " + dir.entry.path);
 
         QVector<RemoteEntry> entries;
-        if (!readDirectory(dir.entry.path, &entries, error)) {
-            *error = QString("%1: %2").arg(dir.entry.path, *error);
-            return false;
+        QString reason;
+        if (!readDirectory(dir.entry.path, &entries, &reason)) {
+            if (dir.entry.path == root.path || !canContinue(jobId, &reason)) {
+                *error = QString("%1: %2").arg(dir.entry.path, reason);
+                return false;
+            }
+            *skipped << QString("%1/: %2").arg(dir.entry.path, reason);
+            continue;
         }
+        localDirs << dir.localPath;
         for (const RemoteEntry &child : entries) {
             QString childLocal = QDir(dir.localPath).filePath(child.name);
-            if (child.isDir) {
-                // Following links to folders could loop forever
-                if (!child.isLink) pending.enqueue(PendingFile{child, childLocal});
+            if (child.isLink) {
+                // Copied as links, like cp -a: following them could loop
+                // forever or pull in a whole other tree (snap's "current")
+                links.append(PendingFile{child, childLocal});
+            } else if (child.isDir) {
+                pending.enqueue(PendingFile{child, childLocal});
+            } else if (child.isSpecial) {
+                // Opening a pipe would wait forever for someone to write to it
+                *skipped << QString("%1: not a regular file (a pipe, socket or device)")
+                                .arg(child.path);
             } else {
                 files.append(PendingFile{child, childLocal});
                 total += child.size;
@@ -590,10 +627,55 @@ bool SftpWorker::downloadTree(int jobId, const RemoteEntry &root, const QString 
 
     emit transferProgress(jobId, 0, total);
     for (const PendingFile &file : files) {
-        if (!downloadFile(jobId, file.entry, file.localPath, bytesDone, total, error)) {
-            *error = QString("%1: %2").arg(file.entry.path, *error);
+        quint64 before = *bytesDone;
+        QString reason;
+        if (!downloadFile(jobId, file.entry, file.localPath, bytesDone, total, &reason)) {
+            if (!canContinue(jobId, &reason)) {
+                *error = QString("%1: %2").arg(file.entry.path, reason);
+                return false;
+            }
+            *skipped << QString("%1: %2").arg(file.entry.path, reason);
+            *bytesDone = before + file.entry.size;
+            reportProgress(jobId, *bytesDone, total);
+        }
+    }
+    for (const PendingFile &link : links) {
+        QString reason;
+        if (!copyLink(link.entry, link.localPath, &reason)) {
+            if (!canContinue(jobId, &reason)) {
+                *error = QString("%1: %2").arg(link.entry.path, reason);
+                return false;
+            }
+            *skipped << QString("%1: %2").arg(link.entry.path, reason);
+        }
+    }
+    return true;
+}
+
+// Recreates a remote symlink locally with the same target, even one that
+// points nowhere on this machine
+bool SftpWorker::copyLink(const RemoteEntry &link, const QString &localPath, QString *error)
+{
+    char *target = sftp_readlink(m_sftp, link.path.toUtf8().constData());
+    if (!target) {
+        *error = QString("Could not read the link: %1").arg(sftpError());
+        return false;
+    }
+    QByteArray targetBytes(target);
+    ssh_string_free_char(target);
+
+    QByteArray local = QFile::encodeName(localPath);
+    struct stat st;
+    if (::lstat(local.constData(), &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            *error = "A local folder with that name is in the way";
             return false;
         }
+        ::unlink(local.constData());
+    }
+    if (::symlink(targetBytes.constData(), local.constData()) != 0) {
+        *error = QString("Could not create the link: %1").arg(QString::fromLocal8Bit(strerror(errno)));
+        return false;
     }
     return true;
 }
@@ -731,7 +813,7 @@ bool SftpWorker::makeRemoteDir(const QString &path, QString *error)
 }
 
 bool SftpWorker::uploadTree(int jobId, const QString &localRoot, const QString &remoteRoot,
-                            quint64 *bytesDone, QString *error)
+                            quint64 *bytesDone, QStringList *skipped, QString *error)
 {
     // List the folder first so progress can show the full size
     QStringList remoteDirs;
@@ -746,6 +828,15 @@ bool SftpWorker::uploadTree(int jobId, const QString &localRoot, const QString &
             return false;
         }
         QPair<QString, QString> dir = pending.dequeue();
+        QFileInfo dirInfo(dir.first);
+        if (!dirInfo.isReadable() || !dirInfo.isExecutable()) {
+            if (dir.first == localRoot) {
+                *error = QString("Could not read %1: permission denied").arg(localRoot);
+                return false;
+            }
+            *skipped << QString("%1/: permission denied").arg(dir.first);
+            continue;
+        }
         remoteDirs << dir.second;
 
         const QFileInfoList children = QDir(dir.first).entryInfoList(
@@ -754,10 +845,17 @@ bool SftpWorker::uploadTree(int jobId, const QString &localRoot, const QString &
             QString childRemote = joinRemotePath(dir.second, child.fileName());
             if (child.isDir()) {
                 // Following links to folders could loop forever
-                if (!child.isSymLink()) pending.enqueue(qMakePair(child.filePath(), childRemote));
+                if (child.isSymLink()) {
+                    *skipped << QString("%1: a link to a folder (not followed)").arg(child.filePath());
+                } else {
+                    pending.enqueue(qMakePair(child.filePath(), childRemote));
+                }
             } else if (child.isFile()) {
                 files.append(qMakePair(child.filePath(), childRemote));
                 total += child.size();
+            } else {
+                *skipped << QString("%1: not a regular file (a pipe, socket, device, "
+                                    "or a link to nothing)").arg(child.filePath());
             }
         }
     }
@@ -769,9 +867,17 @@ bool SftpWorker::uploadTree(int jobId, const QString &localRoot, const QString &
 
     emit transferProgress(jobId, 0, total);
     for (const auto &file : files) {
-        if (!uploadFile(jobId, file.first, file.second, bytesDone, total, error)) {
-            *error = QString("%1: %2").arg(file.first, *error);
-            return false;
+        quint64 before = *bytesDone;
+        quint64 size = quint64(QFileInfo(file.first).size());
+        QString reason;
+        if (!uploadFile(jobId, file.first, file.second, bytesDone, total, &reason)) {
+            if (!canContinue(jobId, &reason)) {
+                *error = QString("%1: %2").arg(file.first, reason);
+                return false;
+            }
+            *skipped << QString("%1: %2").arg(file.first, reason);
+            *bytesDone = before + size;
+            reportProgress(jobId, *bytesDone, total);
         }
     }
     return true;

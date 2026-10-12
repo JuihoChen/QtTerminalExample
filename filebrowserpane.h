@@ -144,6 +144,8 @@ private:
     void uploadPaths(const QStringList &localPaths, const QString &remoteDir);
     int addTransfer(const QString &name, bool isDir, bool upload, const QString &tooltip);
     void cancelTransfer(int jobId);
+    void setTransferDetails(QTreeWidgetItem *item, const QString &summary, const QString &details);
+    void showTransferDetails(QTreeWidgetItem *item);
     void clearFinishedTransfers();
     SftpWorker *transferWorker();
 

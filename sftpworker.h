@@ -27,8 +27,9 @@ struct RemoteEntry {
     QString group;
     bool isDir;          // True for directories and links that point to one
     bool isLink;
+    bool isSpecial;      // A pipe, socket or device: never opened
 
-    RemoteEntry() : size(0), permissions(0), isDir(false), isLink(false) {}
+    RemoteEntry() : size(0), permissions(0), isDir(false), isLink(false), isSpecial(false) {}
 };
 
 Q_DECLARE_METATYPE(RemoteEntry)
@@ -74,6 +75,8 @@ signals:
     void directoryListed(const QString &path, const QVector<RemoteEntry> &entries);
     void listingFailed(const QString &path, const QString &error);
     void transferProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
+    // A folder transfer that skipped some items still succeeds, with the
+    // skipped items and the reasons in error, one per line
     void transferFinished(int jobId, bool success, const QString &error);
 
 private:
@@ -89,11 +92,13 @@ private:
     bool downloadFile(int jobId, const RemoteEntry &entry, const QString &localPath,
                       quint64 *bytesDone, quint64 bytesTotal, QString *error);
     bool downloadTree(int jobId, const RemoteEntry &root, const QString &localRoot,
-                      quint64 *bytesDone, QString *error);
+                      quint64 *bytesDone, QStringList *skipped, QString *error);
+    bool copyLink(const RemoteEntry &link, const QString &localPath, QString *error);
+    bool canContinue(int jobId, QString *error);
     bool uploadFile(int jobId, const QString &localPath, const QString &remotePath,
                     quint64 *bytesDone, quint64 bytesTotal, QString *error);
     bool uploadTree(int jobId, const QString &localRoot, const QString &remoteRoot,
-                    quint64 *bytesDone, QString *error);
+                    quint64 *bytesDone, QStringList *skipped, QString *error);
     bool makeRemoteDir(const QString &path, QString *error);
     void reportProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
 
