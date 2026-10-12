@@ -92,8 +92,17 @@ void TerminalWindow::removeFileBrowserPane(QWidget *terminal)
 bool TerminalWindow::confirmCloseWithTransfers(QWidget *terminal)
 {
     FileBrowserPane *pane = fileBrowserPanes.value(terminal);
-    if (!pane || !pane->hasActiveTransfers()) return true;
-    return QMessageBox::question(this, "Downloads in Progress",
-        "This tab still has downloads running. Closing it cancels them.\n\nClose anyway?",
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+    if (!pane) return true;
+    if (pane->hasActiveTransfers()) {
+        return QMessageBox::question(this, "Transfers in Progress",
+            "This tab still has transfers running. Closing it cancels them.\n\nClose anyway?",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+    }
+    if (pane->hasOpenEdits()) {
+        return QMessageBox::question(this, "Files Open for Editing",
+            "Files from this server are open in your editor. After the tab closes, "
+            "saving them no longer updates the server.\n\nClose anyway?",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+    }
+    return true;
 }

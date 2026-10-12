@@ -14,7 +14,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
-- **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down, watch transfer progress
+- **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
 - **📤 File Upload** - SCP upload from the SSH tab menu
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
 - **🔍 Connection Testing** - Ping-based connectivity testing before connecting
@@ -122,12 +122,15 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 
 - **Remote folder (top)** - The server's files with size, modified time, permissions and owner. Double-click a folder (or press `Enter`) to open it, `Backspace` or the ↑ button to go up, or type a path and press `Enter`. Click a column to sort; folders stay on top.
 - **Local folder (middle)** - Where downloads go. Drag files or folders from the remote list and drop them here, or onto a local subfolder. Double-click to move between local folders.
-- **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder) and **Copy Path**. Double-clicking a remote file also downloads it.
-- **Transfers (bottom)** - Each download with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders download with everything inside them.
+- **Upload** - Drag files or folders from the local list, or from your file manager, onto the remote list (or onto a remote subfolder). Or right-click the remote list → **Upload Files...** / **Upload Folder...**, or right-click local files → **Upload to <remote folder>**. Replacing a file on the server asks first when it's in the folder you're looking at; folders are merged.
+- **View** - Select a remote file and press `F3`, or right-click → **View**. It opens a read-only copy in your editor; nothing goes back to the server.
+- **Edit** - Select a remote file and press `F4`, or right-click → **Edit**. It opens in your editor, and every time you save there it's uploaded back to the server, like WinSCP. **Edit With...** sets the editor command (used by View too) (such as `gedit`, `kate`, `code` or `xterm -e vim`); left empty, the system's default application for the file type is used. The local copy is kept in a private temporary folder and deleted when the tab closes, so save before closing it.
+- **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder), **Edit** and **Copy Path**. Double-clicking a remote file also downloads it.
+- **Transfers (bottom)** - Each download (↓) and upload (↑) with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders transfer with everything inside them.
 
-Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for downloads, so you can keep browsing while a big file comes down. Downloads are written as `name.part` and renamed when complete, so an interrupted download never leaves a cut-off file under the real name. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused.
+Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused.
 
-The file browser uses [libssh](https://www.libssh.org/) for SFTP. Uploading from it, and editing remote files in place, are planned next; for now upload with right-click SSH tab → **📤 Upload File to Server**, which uses `scp`.
+The file browser uses [libssh](https://www.libssh.org/) for SFTP.
 
 ## Requirements
 
@@ -244,7 +247,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Add to Folder** - Right-click folder → "Add Connection to [Folder]"
 
 ### File Transfer Operations
-- **Browse and Download** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
+- **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
 - **Upload File** - Right-click SSH tab → "📤 Upload File to Server"
 
 ### Interface Management
@@ -320,6 +323,8 @@ All SSH connections use optimized settings:
 | File Browser | `Ctrl+Shift+B` | Global |
 | Open folder / download file | `Enter` | Remote file list |
 | Parent folder | `Backspace` | Remote file list |
+| View remote file | `F3` | Remote file list |
+| Edit remote file | `F4` | Remote file list |
 
 ## Troubleshooting
 
@@ -419,7 +424,7 @@ QtTerminalExample/
 - **SSHConnection** - Connection data structure with password support
 - **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
 - **FileBrowserPane** - One SSH tab's file browser, shown in the File Browser dock
-- **SftpWorker** - libssh SFTP session (login, listing, downloads) living on its own thread
+- **SftpWorker** - libssh SFTP session (login, listing, downloads, uploads) living on its own thread
 
 ### Code Features
 - **Modern Qt Practices** - Uses Qt 5.12+ features and best practices
@@ -431,7 +436,8 @@ QtTerminalExample/
 ## Version History
 
 ### v0.7 (Current)
-- ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and a transfer list; replaces the Browse/Download dialogs
+- ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and uploads and a transfer list; replaces the Browse/Download dialogs
+- ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
 
 ### v0.6
 - ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks

@@ -44,8 +44,8 @@ public:
     explicit SftpWorker(const SSHConnection &connection, QObject *parent = nullptr);
     ~SftpWorker() override;
 
-    // Thread-safe: stop a queued or running download as soon as possible
-    void cancelDownload(int jobId);
+    // Thread-safe: stop a queued or running transfer as soon as possible
+    void cancelTransfer(int jobId);
     void cancelAll();
 
     // Thread-safe: cut the connection so a call blocked on an unresponsive
@@ -58,6 +58,8 @@ public slots:
     void connectToServer();
     void listDirectory(const QString &path);
     void download(int jobId, const RemoteEntry &entry, const QString &localPath);
+    // Copies a local file or folder to remotePath, replacing a file there
+    void upload(int jobId, const QString &localPath, const QString &remotePath);
     void disconnectFromServer();
 
 signals:
@@ -71,8 +73,8 @@ signals:
     void connectionFailed(const QString &error);
     void directoryListed(const QString &path, const QVector<RemoteEntry> &entries);
     void listingFailed(const QString &path, const QString &error);
-    void downloadProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
-    void downloadFinished(int jobId, bool success, const QString &error);
+    void transferProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
+    void transferFinished(int jobId, bool success, const QString &error);
 
 private:
     bool ensureConnected(QString *error);
@@ -88,6 +90,11 @@ private:
                       quint64 *bytesDone, quint64 bytesTotal, QString *error);
     bool downloadTree(int jobId, const RemoteEntry &root, const QString &localRoot,
                       quint64 *bytesDone, QString *error);
+    bool uploadFile(int jobId, const QString &localPath, const QString &remotePath,
+                    quint64 *bytesDone, quint64 bytesTotal, QString *error);
+    bool uploadTree(int jobId, const QString &localRoot, const QString &remoteRoot,
+                    quint64 *bytesDone, QString *error);
+    bool makeRemoteDir(const QString &path, QString *error);
     void reportProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
 
     SSHConnection m_connection;
@@ -98,6 +105,7 @@ private:
     QSet<int> m_cancelledJobs;
     bool m_cancelAll;
     QElapsedTimer m_progressTimer;
+    uint32_t m_writeChunk;  // Largest write the server is known to accept
 
     QMutex m_socketMutex;
     int m_socket;     // Connection's socket while connected, else -1

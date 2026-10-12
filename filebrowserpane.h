@@ -17,6 +17,8 @@ class QTreeWidgetItem;
 class QProgressBar;
 class QThread;
 class QTimer;
+class QFileSystemWatcher;
+class QTemporaryDir;
 QT_END_NAMESPACE
 
 class RemoteFileModel;
@@ -38,12 +40,35 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void startDrag(Qt::DropActions supportedActions) override;
 
 private:
     bool accepts(const QMimeData *data) const;
     QString dropFolder(const QPoint &pos) const;
 
     quintptr m_source;
+};
+
+// Remote file list that accepts local files and folders, from the local
+// pane or from a file manager, to upload
+class RemoteDropView : public QTreeView
+{
+    Q_OBJECT
+
+public:
+    explicit RemoteDropView(QWidget *parent = nullptr);
+
+signals:
+    void localFilesDropped(const QStringList &paths, const QString &remoteDir);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
+private:
+    static QStringList localPaths(const QMimeData *data);
+    QString dropFolder(const QPoint &pos) const;
 };
 
 // WinSCP-style file browser for one SSH connection: the remote folder, a
@@ -58,15 +83,17 @@ public:
 
     SSHConnection connection() const { return m_connection; }
     bool hasActiveTransfers() const;
+    bool hasOpenEdits() const { return !m_edits.isEmpty(); }
 
 private slots:
     void onConnected(const QString &homePath);
     void onConnectionFailed(const QString &error);
     void onDirectoryListed(const QString &path, const QVector<RemoteEntry> &entries);
     void onListingFailed(const QString &path, const QString &error);
-    void onDownloadProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
-    void onDownloadFinished(int jobId, bool success, const QString &error);
+    void onTransferProgress(int jobId, quint64 bytesDone, quint64 bytesTotal);
+    void onTransferFinished(int jobId, bool success, const QString &error);
     void showRemoteContextMenu(const QPoint &pos);
+    void showLocalContextMenu(const QPoint &pos);
     void showTransferContextMenu(const QPoint &pos);
 
 private:
@@ -82,6 +109,19 @@ private:
         QTreeWidgetItem *item;
         QProgressBar *bar;
         bool finished;
+        QString refreshDir;  // Remote folder to reload when an upload ends
+        QString editPath;    // Local copy, for a file opened with Edit
+        bool editUpload;     // Saving an edited file back to the server
+        bool viewOnly;       // Local copy for View: read-only, never uploaded
+    };
+
+    // A remote file opened with Edit: a local copy, watched for saves
+    struct EditedFile {
+        QString remotePath;
+        QByteArray savedHash;     // Content the server has (or is being sent)
+        bool ready = false;       // Downloaded and open in the editor
+        int uploadJob = 0;        // Save in progress, else 0
+        bool changedAgain = false;
     };
 
     void watch(SftpWorker *worker, Watchdog *watchdog);
@@ -101,9 +141,20 @@ private:
     QString localFolder() const;
 
     void downloadEntries(const QVector<RemoteEntry> &entries, const QString &localDir);
+    void uploadPaths(const QStringList &localPaths, const QString &remoteDir);
+    int addTransfer(const QString &name, bool isDir, bool upload, const QString &tooltip);
     void cancelTransfer(int jobId);
     void clearFinishedTransfers();
     SftpWorker *transferWorker();
+
+    void editRemoteFile(const RemoteEntry &entry);
+    void viewRemoteFile(const RemoteEntry &entry);
+    QString newLocalCopyPath(const QString &name);
+    bool chooseEditor();
+    void openInEditor(const QString &localPath);
+    void watchEditedFile(const QString &localPath);
+    void checkEditedFiles();
+    void saveEditedFile(const QString &localPath);
 
     SSHConnection m_connection;
 
@@ -120,7 +171,7 @@ private:
 
     RemoteFileModel *m_remoteModel;
     RemoteSortProxy *m_remoteProxy;
-    QTreeView *m_remoteView;
+    RemoteDropView *m_remoteView;
     QLineEdit *m_remotePathEdit;
     QLabel *m_remoteStatus;
 
@@ -131,6 +182,12 @@ private:
     QTreeWidget *m_transferList;
     QHash<int, Transfer> m_transfers;
     int m_nextJobId;
+
+    QTemporaryDir *m_editDir;
+    QFileSystemWatcher *m_editWatcher;
+    QTimer *m_editTimer;                  // Waits for an editor to finish saving
+    QHash<QString, EditedFile> m_edits;   // By local copy's path
+    int m_nextEditDir;
 
     Watchdog m_browseWatchdog;
     Watchdog m_transferWatchdog;
