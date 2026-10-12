@@ -35,6 +35,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <unistd.h>
+
 namespace {
 
 // A request that shows no progress for this long is cut off
@@ -78,6 +80,53 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent)
     label->setFont(font);
     return label;
 }
+
+// Local folder contents, with symlinks shown in italics and their target
+// after the name, like ls -l
+class LocalFileModel : public QFileSystemModel
+{
+public:
+    explicit LocalFileModel(QObject *parent) : QFileSystemModel(parent) {}
+
+    QVariant data(const QModelIndex &index, int role) const override
+    {
+        if (index.column() == 0
+            && (role == Qt::DisplayRole || role == Qt::ToolTipRole || role == Qt::FontRole)) {
+            QFileInfo info = fileInfo(index);
+            if (info.isSymLink()) {
+                QString target = QString::fromLocal8Bit(readLink(info.filePath()));
+                if (target.isEmpty()) target = info.symLinkTarget();
+                switch (role) {
+                case Qt::DisplayRole:
+                    return QString("%1 → %2").arg(info.fileName(), target);
+                case Qt::ToolTipRole:
+                    return info.exists() ? QString("Link to %1").arg(target)
+                                         : QString("Link to %1 (which doesn't exist)").arg(target);
+                case Qt::FontRole: {
+                    QFont font = QFileSystemModel::data(index, role).value<QFont>();
+                    font.setItalic(true);
+                    return font;
+                }
+                }
+            }
+        }
+        // Qt shows "-1 bytes" for broken links, pipes and the like
+        if (index.column() == 1 && role == Qt::DisplayRole) {
+            QFileInfo info = fileInfo(index);
+            if (!info.isDir() && !info.isFile()) return QString();
+        }
+        return QFileSystemModel::data(index, role);
+    }
+
+private:
+    // The target as written in the link (QFileInfo makes it absolute)
+    static QByteArray readLink(const QString &path)
+    {
+        QByteArray buffer(4096, '\0');
+        ssize_t length = ::readlink(QFile::encodeName(path).constData(), buffer.data(), buffer.size());
+        return length > 0 ? buffer.left(int(length)) : QByteArray();
+    }
+};
 
 } // namespace
 
@@ -441,8 +490,10 @@ QWidget *FileBrowserPane::createLocalSection()
     bar->addWidget(m_localPathEdit);
     layout->addLayout(bar);
 
-    m_localModel = new QFileSystemModel(this);
-    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Drives);
+    m_localModel = new LocalFileModel(this);
+    // System includes links whose target is missing, which Qt otherwise hides
+    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::System | QDir::NoDotAndDotDot
+                            | QDir::Drives);
     m_localModel->setReadOnly(true);
 
     m_localView = new LocalDropView(section);
