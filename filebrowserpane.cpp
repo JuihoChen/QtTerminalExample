@@ -42,6 +42,10 @@ const int kStallSeconds = 30;
 
 const char *const kEditorSetting = "fileBrowser/editor";
 
+// Transfer list item data: the summary (column 0) and the full error text
+// (column 2) of a transfer that failed or skipped items
+const int kDetailsRole = Qt::UserRole + 1;
+
 QString joinRemotePath(const QString &dir, const QString &name)
 {
     return dir.endsWith('/') ? dir + name : dir + '/' + name;
@@ -511,6 +515,8 @@ QWidget *FileBrowserPane::createTransferSection()
     connect(clearButton, &QToolButton::clicked, this, &FileBrowserPane::clearFinishedTransfers);
     connect(m_transferList, &QTreeWidget::customContextMenuRequested,
             this, &FileBrowserPane::showTransferContextMenu);
+    connect(m_transferList, &QTreeWidget::itemDoubleClicked,
+            this, [this](QTreeWidgetItem *item) { showTransferDetails(item); });
     return section;
 }
 
@@ -849,16 +855,25 @@ void FileBrowserPane::onTransferFinished(int jobId, bool success, const QString 
 
     it->finished = true;
     it->bar->setRange(0, 100);
-    if (success) {
+    if (success && error.isEmpty()) {
         it->bar->setValue(100);
         it->item->setText(2, "Done");
-        it->item->setToolTip(2, QString());
+    } else if (success) {
+        // A folder that came across except for a few items
+        int count = error.count('\n') + 1;
+        it->bar->setValue(100);
+        it->bar->setFormat("Done");
+        it->item->setText(2, QString("%1 skipped").arg(count));
+        it->item->setForeground(2, QBrush(QColor("#b9770e")));
+        setTransferDetails(it->item, QString("%1 item%2 could not be copied:")
+                                         .arg(count).arg(count == 1 ? "" : "s"), error);
     } else {
+        bool cancelled = error == "Cancelled";
         it->bar->setValue(0);
-        it->bar->setFormat(error == "Cancelled" ? "Cancelled" : "Failed");
-        it->item->setText(2, error == "Cancelled" ? "Cancelled" : "Failed");
-        it->item->setToolTip(2, reason);
+        it->bar->setFormat(cancelled ? "Cancelled" : "Failed");
+        it->item->setText(2, cancelled ? "Cancelled" : "Failed");
         it->item->setForeground(2, QBrush(QColor("#c0392b")));
+        if (!cancelled) setTransferDetails(it->item, "The transfer failed:", reason);
     }
 
     if (viewOnly && success) {
@@ -1073,16 +1088,53 @@ void FileBrowserPane::clearFinishedTransfers()
     }
 }
 
+// What went wrong, shown as a tooltip and in full on double-click
+void FileBrowserPane::setTransferDetails(QTreeWidgetItem *item, const QString &summary,
+                                         const QString &details)
+{
+    const int kTooltipLines = 12;
+    QStringList lines = details.split('\n');
+    QString tooltip = summary + "\n" + lines.mid(0, kTooltipLines).join('\n');
+    if (lines.size() > kTooltipLines) {
+        tooltip += QString("\n... and %1 more").arg(lines.size() - kTooltipLines);
+    }
+    tooltip += "\n\nDouble-click for details.";
+    for (int column = 0; column < 3; ++column) item->setToolTip(column, tooltip);
+    item->setData(0, kDetailsRole, summary);
+    item->setData(2, kDetailsRole, details);
+}
+
+void FileBrowserPane::showTransferDetails(QTreeWidgetItem *item)
+{
+    QString details = item->data(2, kDetailsRole).toString();
+    if (details.isEmpty()) return;
+
+    QMessageBox box(QMessageBox::Warning, "Transfer Details",
+                    QString("%1\n%2").arg(item->text(0), item->data(0, kDetailsRole).toString()),
+                    QMessageBox::Close, this);
+    QStringList lines = details.split('\n');
+    box.setInformativeText(lines.mid(0, 5).join('\n')
+                           + (lines.size() > 5 ? "\n..." : QString()));
+    box.setDetailedText(details);
+    box.exec();
+}
+
 void FileBrowserPane::showTransferContextMenu(const QPoint &pos)
 {
     QList<int> active;
     QStringList errors;
+    QTreeWidgetItem *withDetails = nullptr;
     for (QTreeWidgetItem *item : m_transferList->selectedItems()) {
         int jobId = item->data(0, Qt::UserRole).toInt();
         auto it = m_transfers.constFind(jobId);
         if (it == m_transfers.constEnd()) continue;
-        if (!it->finished) active << jobId;
-        else if (!item->toolTip(2).isEmpty()) errors << item->text(0) + ": " + item->toolTip(2);
+        QString details = item->data(2, kDetailsRole).toString();
+        if (!it->finished) {
+            active << jobId;
+        } else if (!details.isEmpty()) {
+            errors << item->text(0) + ": " + details;
+            if (!withDetails) withDetails = item;
+        }
     }
 
     QMenu menu(this);
@@ -1090,6 +1142,11 @@ void FileBrowserPane::showTransferContextMenu(const QPoint &pos)
         menu.addAction(style()->standardIcon(QStyle::SP_DialogCancelButton), "Cancel",
                        this, [this, active]() {
             for (int jobId : active) cancelTransfer(jobId);
+        });
+    }
+    if (withDetails) {
+        menu.addAction("Show Details...", this, [this, withDetails]() {
+            showTransferDetails(withDetails);
         });
     }
     if (!errors.isEmpty()) {
