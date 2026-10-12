@@ -324,8 +324,15 @@ SSHConnection ConnectionDialog::getConnection() const
 
 void ConnectionDialog::setAvailableFolders(const QStringList &folders)
 {
+    // Repopulating the combo resets its selection, so keep the folder
+    // that was already chosen (the edited connection's, or the default).
+    const QString current = folderCombo->currentText();
     folderCombo->clear();
     folderCombo->addItems(folders);
+    if (!current.isEmpty() && folderCombo->findText(current) == -1) {
+        folderCombo->addItem(current);
+    }
+    folderCombo->setCurrentText(current);
 }
 
 void ConnectionDialog::validateInput()
