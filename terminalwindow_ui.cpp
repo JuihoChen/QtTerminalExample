@@ -11,6 +11,7 @@
 #include <QHeaderView>
 #include <QFormLayout>
 #include <QSpacerItem>
+#include <QDockWidget>
 
 void TerminalWindow::setupUI()
 {
@@ -75,6 +76,8 @@ void TerminalWindow::setupUI()
     mainSplitter->setCollapsible(0, false);
     
     mainLayout->addWidget(mainSplitter);
+
+    setupFileBrowserDock();
     
     statusBar()->showMessage("Ready");
     resize(1400, 800);
@@ -116,6 +119,15 @@ void TerminalWindow::setupMenus()
     viewMenu->addAction("Zoom &In", this, &TerminalWindow::increaseFont, QKeySequence::ZoomIn);
     viewMenu->addAction("Zoom &Out", this, &TerminalWindow::decreaseFont, QKeySequence::ZoomOut);
     viewMenu->addAction("&Reset Zoom", this, &TerminalWindow::resetFont, QKeySequence(Qt::CTRL + Qt::Key_0));
+    viewMenu->addSeparator();
+
+    QAction *fileBrowserAction = fileBrowserDock->toggleViewAction();
+    fileBrowserAction->setText("File &Browser");
+    fileBrowserAction->setShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_B));
+    connect(fileBrowserAction, &QAction::triggered, this, [this](bool checked) {
+        if (checked) showFileBrowser();
+    });
+    viewMenu->addAction(fileBrowserAction);
     
     // Connections menu (Feature 3)
     QMenu *connectionsMenu = menuBar->addMenu("&Connections");

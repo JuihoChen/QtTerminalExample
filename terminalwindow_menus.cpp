@@ -106,13 +106,9 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
                 uploadFileToSSH(connection);
             });
             
-            menu.addAction("📥 Download File from Server...", [this, connection]() {
-                downloadFileFromSSH(connection);
-            });
-            
-            menu.addSeparator();
-            menu.addAction("📂 Browse Remote Files...", [this, connection]() {
-                browseRemoteFiles(connection);
+            menu.addAction("📂 File Browser...", [this, tabIndex]() {
+                tabWidget->setCurrentIndex(tabIndex);
+                showFileBrowser();
             });
         }
     }

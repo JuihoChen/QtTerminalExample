@@ -14,7 +14,8 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
-- **📤📥 File Transfer Capabilities** - SCP upload/download with visual file browser
+- **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down, watch transfer progress
+- **📤 File Upload** - SCP upload from the SSH tab menu
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
 - **🔍 Connection Testing** - Ping-based connectivity testing before connecting
 - **⌨️ Rich Keyboard Shortcuts** - Standard terminal shortcuts plus connection management
@@ -106,7 +107,7 @@ Open a connection with **Edit** (or create one with **New Connection**) and swit
 
 The tab checks the key as you pick it and warns when the file is missing, is a `.pub` public key, or has permissions that OpenSSH would refuse (fix with `chmod 600`). It also shows whether an agent is running.
 
-The key settings apply to terminals, SCP upload/download and the remote file browser. A saved password is still used by `sshpass` as a fallback if the server does not accept the key. Settings are saved with the connection in `connections.json` (`useKeyAuth`, `identityFile`, `useAgent`); connections saved by older versions load with key authentication off.
+The key settings apply to terminals, SCP upload and the file browser. A saved password is still used as a fallback if the server does not accept the key (by `sshpass` in terminals, directly by the file browser). Settings are saved with the connection in `connections.json` (`useKeyAuth`, `identityFile`, `useAgent`); connections saved by older versions load with key authentication off.
 
 To set up a key for a server:
 ```bash
@@ -115,27 +116,18 @@ ssh-copy-id -i ~/.ssh/id_ed25519.pub user@hostname
 ssh-add ~/.ssh/id_ed25519   # optional: load it into ssh-agent
 ```
 
-## File Transfer Capabilities
+## File Browser
 
-### SCP Integration
-- **Upload Files** - Drag-and-drop or browse to upload files to remote servers
-- **Download Files** - Browse remote directories and download files
-- **Remote File Browser** - Visual directory navigation with file type icons
-- **Progress Dialogs** - Real-time upload/download progress with cancel option
-- **Error Handling** - Comprehensive error messages with suggested solutions
+The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at. Open it with **View → File Browser** (`Ctrl+Shift+B`) or right-click an SSH tab → **📂 File Browser...**. It docks on the right of the terminal; drag its title bar to move it to the left or bottom, or float it.
 
-### Remote Directory Navigation
-- **Auto-Detection** - Automatically detects remote working directory
-- **Visual Browser** - File listing with icons (📁 directories, 📄 files, ⚙️ executables)
-- **Directory Navigation** - Navigate up/down directory tree
-- **Manual Path Entry** - Direct path input for advanced users
-- **File Size Display** - Shows file sizes and permissions
+- **Remote folder (top)** - The server's files with size, modified time, permissions and owner. Double-click a folder (or press `Enter`) to open it, `Backspace` or the ↑ button to go up, or type a path and press `Enter`. Click a column to sort; folders stay on top.
+- **Local folder (middle)** - Where downloads go. Drag files or folders from the remote list and drop them here, or onto a local subfolder. Double-click to move between local folders.
+- **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder) and **Copy Path**. Double-clicking a remote file also downloads it.
+- **Transfers (bottom)** - Each download with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders download with everything inside them.
 
-### Context Menu Integration
-Right-click on SSH terminal tabs to access:
-- **📤 Upload File to Server** - Select local file and remote destination
-- **📥 Download File from Server** - Browse and download remote files
-- **📂 Browse Remote Files** - Explore remote directory structure
+Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for downloads, so you can keep browsing while a big file comes down. Downloads are written as `name.part` and renamed when complete, so an interrupted download never leaves a cut-off file under the real name. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused.
+
+The file browser uses [libssh](https://www.libssh.org/) for SFTP. Uploading from it, and editing remote files in place, are planned next; for now upload with right-click SSH tab → **📤 Upload File to Server**, which uses `scp`.
 
 ## Requirements
 
@@ -150,6 +142,7 @@ qtermwidget is bundled in the `qtermwidget/` folder and built together with the 
 
 ### Runtime Dependencies  
 - **OpenSSH client** - For SSH connections (`openssh-client` package)
+- **libssh 0.9+** - For the file browser (`libssh-dev` to build, `libssh-4` at runtime)
 - **sshpass** - For automatic password authentication (optional but recommended)
 - **ping utility** - For connection testing (usually pre-installed)
 
@@ -161,18 +154,18 @@ qtermwidget is bundled in the `qtermwidget/` folder and built together with the 
 ```bash
 sudo apt update
 sudo apt install build-essential cmake qtbase5-dev qttools5-dev lxqt-build-tools \
-                 openssh-client sshpass iputils-ping
+                 libssh-dev openssh-client sshpass iputils-ping
 ```
 
 **Fedora/RHEL:**
 ```bash
 sudo dnf install qt5-qtbase-devel qt5-linguist lxqt-build-tools gcc-c++ make cmake \
-                 openssh-clients sshpass iputils
+                 libssh-devel openssh-clients sshpass iputils
 ```
 
 **Arch Linux:**
 ```bash
-sudo pacman -S qt5-base qt5-tools lxqt-build-tools cmake openssh sshpass iputils
+sudo pacman -S qt5-base qt5-tools lxqt-build-tools cmake libssh openssh sshpass iputils
 ```
 
 ### Build Application
@@ -251,11 +244,8 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Add to Folder** - Right-click folder → "Add Connection to [Folder]"
 
 ### File Transfer Operations
+- **Browse and Download** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
 - **Upload File** - Right-click SSH tab → "📤 Upload File to Server"
-- **Download File** - Right-click SSH tab → "📥 Download File from Server"
-- **Browse Files** - Right-click SSH tab → "📂 Browse Remote Files"
-- **Progress Monitoring** - Watch progress dialogs during transfers
-- **Error Recovery** - Review error messages for connection issues
 
 ### Interface Management
 - **Resize Panels** - Drag the splitter handles between panels
@@ -327,6 +317,9 @@ All SSH connections use optimized settings:
 | Zoom In | `Ctrl++` | Global |
 | Zoom Out | `Ctrl+-` | Global |
 | Reset Zoom | `Ctrl+0` | Global |
+| File Browser | `Ctrl+Shift+B` | Global |
+| Open folder / download file | `Enter` | Remote file list |
+| Parent folder | `Backspace` | Remote file list |
 
 ## Troubleshooting
 
@@ -338,6 +331,13 @@ All SSH connections use optimized settings:
 sudo apt install lxqt-build-tools qttools5-dev
 ```
 lxqt-build-tools must be version 0.9 or newer. Ubuntu 20.04 ships an older one, so use Ubuntu 22.04+ or build lxqt-build-tools from source.
+
+**CMake can't find `libssh`** (`The following required packages were not found: libssh>=0.9`)
+```bash
+sudo apt install libssh-dev       # Ubuntu/Debian
+sudo dnf install libssh-devel     # Fedora/RHEL
+brew install libssh pkg-config    # macOS
+```
 
 **CMake can't find `Qt5`**
 ```bash
@@ -403,6 +403,9 @@ QtTerminalExample/
 ├── terminalwindow.h/.cpp    # Main window with three-panel interface
 ├── connectiondialog.h/.cpp  # Connection add/edit dialog with password support
 ├── enhanced_qtermwidget.h/.cpp # Enhanced terminal widget with improved selection
+├── filebrowserpane.h/.cpp   # File browser: remote list, local drop target, transfers
+├── remotefilemodel.h/.cpp   # Remote folder listing model and sorting
+├── sftpworker.h/.cpp        # libssh SFTP connection, run on a worker thread
 ├── CMakeLists.txt           # CMake build configuration
 ├── qtermwidget/             # Bundled qtermwidget library (built with the app)
 └── README.md               # This comprehensive documentation
@@ -415,6 +418,8 @@ QtTerminalExample/
 - **TerminalPositionManager** - Coordinate conversion for terminal interactions
 - **SSHConnection** - Connection data structure with password support
 - **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
+- **FileBrowserPane** - One SSH tab's file browser, shown in the File Browser dock
+- **SftpWorker** - libssh SFTP session (login, listing, downloads) living on its own thread
 
 ### Code Features
 - **Modern Qt Practices** - Uses Qt 5.12+ features and best practices
@@ -425,7 +430,10 @@ QtTerminalExample/
 
 ## Version History
 
-### v0.6 (Current)
+### v0.7 (Current)
+- ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and a transfer list; replaces the Browse/Download dialogs
+
+### v0.6
 - ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks
 
 ### v0.5

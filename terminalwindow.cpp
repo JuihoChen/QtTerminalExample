@@ -6,8 +6,10 @@
 #include <QMessageBox>
 #include <QSettings>
 
+#include "filebrowserpane.h"
+
 TerminalWindow::TerminalWindow(QWidget *parent) 
-    : QMainWindow(parent), tabWidget(nullptr), tabCounter(1), hasSelectedConnection(false)
+    : QMainWindow(parent), tabWidget(nullptr), tabCounter(1), fileBrowserDock(nullptr), hasSelectedConnection(false)
 {
     setupUI();
     setupMenus();
@@ -25,6 +27,12 @@ TerminalWindow::~TerminalWindow()
 {
     saveConnections();  // Save connections before exit
     saveSettings();
+
+    // Close SFTP sessions while the members they rely on still exist, and stop
+    // tab changes during teardown from reaching the file browser
+    disconnect(tabWidget, nullptr, this, nullptr);
+    qDeleteAll(fileBrowserPanes);
+    fileBrowserPanes.clear();
 }
 
 void TerminalWindow::closeEvent(QCloseEvent *event)

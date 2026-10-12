@@ -7,6 +7,7 @@
 #include <QSplitter>
 #include <QGroupBox>
 #include <QProgressDialog>
+#include <QHash>
 
 #include "qtermwidget.h"
 #include "sshconnection.h"
@@ -18,7 +19,13 @@ class QAction;
 class QMenuBar;
 class QStatusBar;
 class QCloseEvent;
+class QDockWidget;
+class QStackedWidget;
+class QLabel;
+class QPushButton;
 QT_END_NAMESPACE
+
+class FileBrowserPane;
 
 class TerminalWindow : public QMainWindow
 {
@@ -70,8 +77,10 @@ private slots:
     // File transfer slots
     void showTabContextMenu(const QPoint &pos);
     void uploadFileToSSH(const SSHConnection &connection);
-    void downloadFileFromSSH(const SSHConnection &connection);
-    void browseRemoteFiles(const SSHConnection &connection);
+
+    // File browser dock
+    void showFileBrowser();
+    void updateFileBrowser();
 
 private:
     void setupUI();
@@ -107,14 +116,16 @@ private:
 
     // File transfer methods
     void performSCPUpload(const SSHConnection &connection, const QString &localFile, const QString &remotePath);
-    void performSCPDownload(const SSHConnection &connection, const QString &remoteFile, const QString &localFile);
     QString getDefaultRemotePath(const SSHConnection &connection);
     void detectRemoteWorkingDirectory(const SSHConnection &connection,
         std::function<void(const QString&)> callback);
     QString getCurrentRemoteDirectory(QTermWidget *terminal);
-    void showRemoteFileBrowser(const SSHConnection &connection, const QString &remotePath,
-        std::function<void(const QString&)> callback);
     QProgressDialog *scpProgressDialog;
+
+    // File browser dock methods
+    void setupFileBrowserDock();
+    void removeFileBrowserPane(QWidget *terminal);
+    bool confirmCloseWithTransfers(QWidget *terminal);
 
     QTabWidget *tabWidget;
     QTreeWidget *connectionTree;
@@ -134,6 +145,12 @@ private:
     QPushButton *quickConnectButton;
     QPushButton *editConnectionButton;
     QPushButton *deleteConnectionButton;
+
+    // File browser dock: one pane per SSH tab, created when first shown
+    QDockWidget *fileBrowserDock;
+    QStackedWidget *fileBrowserStack;
+    QLabel *fileBrowserPlaceholder;
+    QHash<QWidget*, FileBrowserPane*> fileBrowserPanes;
 
     // Store connections
     QList<SSHConnection> connections;
