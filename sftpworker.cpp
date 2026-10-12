@@ -25,6 +25,30 @@ QString joinRemotePath(const QString &dir, const QString &name)
     return dir.endsWith('/') ? dir + name : dir + '/' + name;
 }
 
+// Offers the standard ~/.ssh keys without asking ssh-agent. libssh's
+// ssh_userauth_publickey_auto() always uses a running agent, and the option
+// to turn that off (SSH_OPTIONS_IDENTITY_AGENT) only exists from libssh 0.10.
+bool authenticateWithDefaultKeys(ssh_session session)
+{
+    static const char *const names[] = { "id_ed25519", "id_ecdsa", "id_rsa" };
+    QDir sshDir(QDir::home().filePath(".ssh"));
+    for (const char *name : names) {
+        QString path = sshDir.filePath(name);
+        if (!QFileInfo::exists(path)) continue;
+
+        ssh_key key = nullptr;
+        if (ssh_pki_import_privkey_file(QFile::encodeName(path).constData(),
+                                        nullptr, nullptr, nullptr, &key) != SSH_OK) {
+            continue;  // Unreadable, or needs a passphrase
+        }
+        int rc = ssh_userauth_publickey(session, nullptr, key);
+        ssh_key_free(key);
+        if (rc == SSH_AUTH_SUCCESS) return true;
+        if (rc == SSH_AUTH_ERROR) return false;
+    }
+    return false;
+}
+
 struct PendingFile {
     RemoteEntry entry;
     QString localPath;
@@ -123,11 +147,6 @@ bool SftpWorker::ensureConnected(QString *error)
     ssh_options_set(m_session, SSH_OPTIONS_PORT, &port);
     ssh_options_set(m_session, SSH_OPTIONS_TIMEOUT, &timeout);
 
-    if (m_connection.useKeyAuth && !m_connection.useAgent) {
-        // Same as "ssh -o IdentityAgent=none": never ask the running ssh-agent
-        ssh_options_set(m_session, SSH_OPTIONS_IDENTITY_AGENT, "none");
-    }
-
     if (ssh_connect(m_session) != SSH_OK) {
         *error = QString("Could not connect to %1:%2\n%3")
                      .arg(m_connection.host).arg(m_connection.port)
@@ -213,9 +232,12 @@ bool SftpWorker::authenticate(QString *error)
 
         // IdentitiesOnly: with the agent turned off, offer only the key file
         bool onlyKeyFile = m_connection.useKeyAuth && !m_connection.useAgent && !keyFile.isEmpty();
-        if (!onlyKeyFile) {
-            tried << (m_connection.useKeyAuth && !m_connection.useAgent
-                          ? "default keys" : "ssh-agent and default keys");
+        if (!onlyKeyFile && m_connection.useKeyAuth && !m_connection.useAgent) {
+            // Same as "ssh -o IdentityAgent=none": never ask the running ssh-agent
+            tried << "default keys";
+            if (authenticateWithDefaultKeys(m_session)) return true;
+        } else if (!onlyKeyFile) {
+            tried << "ssh-agent and default keys";
             rc = ssh_userauth_publickey_auto(m_session, nullptr, nullptr);
             if (rc == SSH_AUTH_SUCCESS) return true;
         }
