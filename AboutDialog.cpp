@@ -31,7 +31,7 @@ void AboutDialog::setupUI() {
     mainLayout->addWidget(nameLabel);
 
     // Version info
-    QLabel* versionLabel = new QLabel("Version 0.6.0");
+    QLabel* versionLabel = new QLabel(QStringLiteral("Version " APP_VERSION));
     versionLabel->setAlignment(Qt::AlignCenter);
     versionLabel->setStyleSheet("font-size: 14px; color: #666;");
     mainLayout->addWidget(versionLabel);

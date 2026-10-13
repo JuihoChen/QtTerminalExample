@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
     
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
+    app.setApplicationVersion(APP_VERSION);
 
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");

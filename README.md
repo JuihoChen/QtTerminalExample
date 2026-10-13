@@ -438,6 +438,8 @@ QtTerminalExample/
 ### v0.7 (Current)
 - ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and uploads and a transfer list; replaces the Browse/Download dialogs
 - ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
+- ✅ **Start Folder** - Local terminals start in your home folder; File > Start Folder... picks another
+- ✅ **Fixes** - Default `TERM` when launched from a desktop shortcut, connection folders kept in New/Edit Connection, symlinks shown in the file browser
 
 ### v0.6
 - ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks
