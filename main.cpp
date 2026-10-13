@@ -4,8 +4,11 @@
 
 int main(int argc, char *argv[])
 {
-    // Force X11 platform to avoid Wayland issues
-    qputenv("QT_QPA_PLATFORM", "xcb");
+    // Default to X11 to avoid Wayland issues, but let QT_QPA_PLATFORM pick
+    // another platform (e.g. QT_QPA_PLATFORM=wayland) to compare redrawing
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "xcb");
+    }
     
     // Programs in the terminals need TERM; a desktop launcher does not set it
     if (qEnvironmentVariableIsEmpty("TERM")) {
