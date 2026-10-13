@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(QtTerminalExample)
+project(QtTerminalExample VERSION 0.7.0)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the build type." FORCE)
@@ -36,6 +36,11 @@ add_executable(QtTerminalExample
     connectiondialog.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
+)
+
+# The About dialog shows this, so the version lives only in project() above
+target_compile_definitions(QtTerminalExample PRIVATE
+    APP_VERSION="${QtTerminalExample_VERSION}"
 )
 
 if(USE_STATIC_QTERMWIDGET)
