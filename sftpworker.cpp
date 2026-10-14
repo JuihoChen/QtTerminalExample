@@ -443,6 +443,8 @@ bool SftpWorker::readDirectory(const QString &path, QVector<RemoteEntry> *entrie
                 entry.isDir = target->type == SSH_FILEXFER_TYPE_DIRECTORY;
                 entry.isSpecial = target->type == SSH_FILEXFER_TYPE_SPECIAL;
                 if (!entry.isDir) entry.size = target->size;
+                // The target is what an upload through the link changes
+                entry.modified = QDateTime::fromSecsSinceEpoch(target->mtime);
                 sftp_attributes_free(target);
             }
         }
