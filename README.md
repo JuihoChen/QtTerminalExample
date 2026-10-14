@@ -298,6 +298,7 @@ All SSH connections use optimized settings:
 
 ### Terminal Enhancements
 - **Large History Buffer** - 200,000 line history per terminal
+- **No Blink on New Tabs** - A new tab keeps the previous picture until its shell prompt is drawn (at most 500 ms)
 - **Desktop Launch Ready** - Sets a default `TERM` when started from a desktop shortcut
 - **Display Platform** - Runs on X11 (`xcb`) by default; set `QT_QPA_PLATFORM` (for example `QT_QPA_PLATFORM=wayland ./QtTerminalExample`) to use another
 - **Smart Font Scaling** - Synchronized font changes across all terminals
@@ -456,6 +457,7 @@ QtTerminalExample/
 - ✅ **Hidden Saved Passwords** - Passwords reach `sshpass -e` through `SSHPASS`, so they never show in the terminal, shell history or `ps`
 - ✅ **Display Platform** - `QT_QPA_PLATFORM` is honored; X11 stays the default
 - ✅ **Folder Transfers** - Unreadable or special files are skipped (and listed) instead of stopping the whole folder; symlinks shown in the local list
+- ✅ **Smooth New Tabs** - The terminal area no longer blinks blank when a new tab opens
 - ✅ **Fixes** - Default `TERM` when launched from a desktop shortcut, connection folders kept in New/Edit Connection, file browser no longer hangs on "Connecting..." or asks for a key passphrase
 
 ### v0.6
