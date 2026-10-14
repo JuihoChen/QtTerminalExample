@@ -124,7 +124,7 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection,
         scpProcess->kill();
     });
     
-    scpProcess->start("/bin/bash", QStringList() << "-c" << scpCommand);
+    CommandSafetyHelper::startWithPassword(scpProcess, connection, scpCommand);
 }
 
 QString TerminalWindow::getDefaultRemotePath(const SSHConnection &connection)
@@ -162,7 +162,7 @@ void TerminalWindow::detectRemoteWorkingDirectory(const SSHConnection &connectio
         pwdProcess->deleteLater();
     });
     
-    pwdProcess->start("/bin/bash", QStringList() << "-c" << pwdCommand);
+    CommandSafetyHelper::startWithPassword(pwdProcess, connection, pwdCommand);
 }
 
 // Alternative approach: Track terminal working directories

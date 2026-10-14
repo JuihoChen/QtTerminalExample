@@ -83,6 +83,7 @@ The bottom-left panel shows comprehensive connection information:
 - **Show/Hide Toggle** - Connection dialog includes visibility toggle while typing
 - **Status Indicators** - Connection tooltips and details panel show password status
 - **Automatic Authentication** - Uses `sshpass` for seamless login when password is available
+- **Password Kept Off Screen** - The password is handed to `sshpass -e` through the `SSHPASS` environment variable, so it never appears in the terminal, in shell history, or in the process list (`ps`); the local shell drops it once the SSH session ends
 
 ### Security Considerations
 - **Local Storage** - Passwords stored in `~/.config/QtTerminalExample/connections.json`

@@ -56,12 +56,18 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     terminal->setProperty("isSSHTerminal", true);
     terminal->setProperty("sshConnection", QVariant::fromValue(connection));
 
-    // SSH terminal specific setup
+    // SSH terminal specific setup. A saved password reaches sshpass through
+    // the shell's environment, never through the text typed into the terminal.
+    terminal->setEnvironment(CommandSafetyHelper::passwordEnvironment(connection));
     terminal->setShellProgram("/bin/bash");
     terminal->startShellProgram();
 
-    // Build safe SSH command using the helper
+    // Build safe SSH command using the helper; once ssh exits, drop the
+    // password from the local shell so later commands in this tab don't get it
     QString sshCommand = CommandSafetyHelper::buildSafeSSHCommand(connection);
+    if (!connection.password.isEmpty()) {
+        sshCommand += "; unset SSHPASS";
+    }
 
     // Monitor terminal output to detect when SSH connection ends
     connect(terminal, &QTermWidget::receivedData, this, [this, terminal](const QString &text) {

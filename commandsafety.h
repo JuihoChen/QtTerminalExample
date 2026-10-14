@@ -2,6 +2,8 @@
 #define COMMANDSAFETY_H
 
 #include <QDir>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QString>
 #include "sshconnection.h"
 
@@ -46,12 +48,34 @@ public:
         return trimmed;
     }
 
-    // Prefix for password authentication (empty when no password is saved)
+    // Prefix for password authentication (empty when no password is saved).
+    // The password itself never goes on the command line: "sshpass -e" reads it
+    // from SSHPASS, which passwordEnvironment() puts in the child's environment,
+    // so it stays off the screen, out of shell history and out of "ps".
     static QString buildPasswordPrefix(const SSHConnection &connection) {
         if (connection.password.isEmpty()) {
             return QString();
         }
-        return QString("sshpass -p %1 ").arg(escapeShellArgument(connection.password));
+        return QString("sshpass -e ");
+    }
+
+    // Environment entries a command built above needs (empty when no password is saved)
+    static QStringList passwordEnvironment(const SSHConnection &connection) {
+        if (connection.password.isEmpty()) {
+            return QStringList();
+        }
+        return QStringList() << QString("SSHPASS=") + connection.password;
+    }
+
+    // Start "bash -c command" with the password, if any, in its environment only
+    static void startWithPassword(QProcess *process, const SSHConnection &connection,
+                                  const QString &command) {
+        if (!connection.password.isEmpty()) {
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert("SSHPASS", connection.password);
+            process->setProcessEnvironment(env);
+        }
+        process->start("/bin/bash", QStringList() << "-c" << command);
     }
 
     // Options shared by ssh and scp, including SSH key authentication
