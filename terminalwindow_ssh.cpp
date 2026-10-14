@@ -26,12 +26,7 @@ void TerminalWindow::onConnectionDoubleClicked(QTreeWidgetItem *item, int column
     // Create appropriate tab title
     QString tabTitle = QString("SSH: %1").arg(connection.name);
     
-    int index = tabWidget->addTab(terminal, tabTitle);
-    tabWidget->setCurrentIndex(index);
-    
-    // Focus the new terminal
-    terminal->setFocus();
-    updateStatusBar();
+    addTerminalTab(terminal, tabTitle);
     
     // Show connection status in status bar
     QString statusMessage = QString("Connecting to %1@%2:%3...")
@@ -158,12 +153,7 @@ void TerminalWindow::onQuickConnectClicked()
     // Create appropriate tab title
     QString tabTitle = QString("SSH: %1").arg(selectedConnection.name);
     
-    int index = tabWidget->addTab(terminal, tabTitle);
-    tabWidget->setCurrentIndex(index);
-    
-    // Focus the new terminal
-    terminal->setFocus();
-    updateStatusBar();
+    addTerminalTab(terminal, tabTitle);
     
     // Show connection status in status bar
     QString statusMessage = QString("Connecting to %1@%2:%3...")

@@ -92,6 +92,7 @@ private:
     void loadSettings();
     QTermWidget* createTerminalWidget();
     QTermWidget* createTerminal();
+    void addTerminalTab(QTermWidget *terminal, const QString &title);
     QTermWidget* getCurrentTerminal();
     QString getNextTabTitle();
     QString startFolder() const;

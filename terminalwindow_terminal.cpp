@@ -129,14 +129,30 @@ QString TerminalWindow::getNextTabTitle()
 void TerminalWindow::newTab()
 {
     QTermWidget *terminal = createTerminal();
-    QString tabTitle = getNextTabTitle();
-    
-    int index = tabWidget->addTab(terminal, tabTitle);
+    addTerminalTab(terminal, getNextTabTitle());
+}
+
+// Switches to the new terminal but holds its drawing until the shell has
+// printed its prompt (or a short wait passes), so the terminal area keeps the
+// previous picture instead of blinking to an empty screen while the shell starts
+void TerminalWindow::addTerminalTab(QTermWidget *terminal, const QString &title)
+{
+    terminal->setUpdatesEnabled(false);
+    QTimer *reveal = new QTimer(terminal);
+    reveal->setSingleShot(true);
+    connect(reveal, &QTimer::timeout, terminal, [terminal, reveal]() {
+        reveal->deleteLater();
+        terminal->setUpdatesEnabled(true);
+    });
+    // Give the rest of the prompt a moment to arrive
+    connect(terminal, &QTermWidget::receivedData, reveal, [reveal]() {
+        if (reveal->remainingTime() > 50) reveal->start(50);
+    });
+    reveal->start(500);
+
+    int index = tabWidget->addTab(terminal, title);
     tabWidget->setCurrentIndex(index);
-    
-    // Focus the new terminal
     terminal->setFocus();
-    
     updateStatusBar();
 }
 
