@@ -14,8 +14,10 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
+- **🙈 Hidden Saved Passwords** - Saved passwords go to `sshpass -e` through the environment, never shown on screen, in shell history or in `ps`
 - **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
 - **📤 File Upload** - SCP upload from the SSH tab menu
+- **🏠 Local Terminal Start Folder** - Local terminals open in your home folder, or a folder you pick with File → Start Folder...
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
 - **🔍 Connection Testing** - Ping-based connectivity testing before connecting
 - **⌨️ Rich Keyboard Shortcuts** - Standard terminal shortcuts plus connection management
@@ -224,6 +226,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 
 ### Terminal Operations
 - **New Tab** - `Ctrl+T` or File → New Tab or right-click tab bar
+- **Start Folder** - File → Start Folder... picks the folder new local terminals open in (default: your home folder; falls back to home if the folder is gone)
 - **Close Tab** - `Ctrl+W` or click × on tab or right-click → Close Tab
 - **Switch Tabs** - `Ctrl+PageUp/PageDown` or click tab headers
 - **Copy** - `Ctrl+C` in terminal or right-click → Copy
@@ -246,6 +249,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Delete Connection** - Select connection → click "🗑️ Delete" or right-click → Delete
 - **Test Connectivity** - Use "Test Connection" button in connection dialog
 - **Add to Folder** - Right-click folder → "Add Connection to [Folder]"
+- **Folder Kept** - New Connection starts in the folder selected in the tree, and Edit Connection keeps the connection's current folder
 
 ### File Transfer Operations
 - **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
@@ -277,7 +281,7 @@ cp ~/.config/QtTerminalExample/connections.json ~/connections-backup.json.$(date
 ```
 
 ### Application Settings
-- **Qt Settings Storage** - Window geometry, fonts, and UI preferences
+- **Qt Settings Storage** - Window geometry, fonts, UI preferences, and the local terminal start folder
 - **Automatic Persistence** - Settings saved automatically on exit
 - **Manual Reset** - Delete `~/.config/QtTerminalExample/` to reset all settings
 
@@ -287,11 +291,15 @@ cp ~/.config/QtTerminalExample/connections.json ~/connections-backup.json.$(date
 All SSH connections use optimized settings:
 - **Keep-Alive** - `ServerAliveInterval=60` and `ServerAliveCountMax=3`
 - **Host Key Policy** - `StrictHostKeyChecking=accept-new` for new connections
-- **Connection Timeout** - Automatic timeouts for failed connections
+- **SSH Key Options** - `-i <key>`, plus `-o IdentityAgent=none -o IdentitiesOnly=yes` when the agent is turned off
+- **Hidden Password** - `sshpass -e` reads the saved password from `SSHPASS`, which the local shell unsets when ssh exits
+- **Connection Timeout** - The file browser gives up on an unreachable server after 15 seconds
 - **Multi-Port Support** - Custom SSH ports supported with validation
 
 ### Terminal Enhancements
 - **Large History Buffer** - 200,000 line history per terminal
+- **Desktop Launch Ready** - Sets a default `TERM` when started from a desktop shortcut
+- **Display Platform** - Runs on X11 (`xcb`) by default; set `QT_QPA_PLATFORM` (for example `QT_QPA_PLATFORM=wayland ./QtTerminalExample`) to use another
 - **Smart Font Scaling** - Synchronized font changes across all terminals
 - **Session Persistence** - Terminal state maintained during SSH reconnections
 - **Tab Management** - Intelligent tab titling and close behavior
@@ -407,7 +415,12 @@ chmod 700 ~/.config/QtTerminalExample/
 QtTerminalExample/
 ├── main.cpp                 # Application entry point with platform setup
 ├── terminalwindow.h/.cpp    # Main window with three-panel interface
-├── connectiondialog.h/.cpp  # Connection add/edit dialog with password support
+├── terminalwindow_*.cpp     # Main window split by area: ui, menus, terminal, ssh,
+│                            #   connections, appearance, filebrowser, filetransfer
+├── connectiondialog.h/.cpp  # Connection add/edit dialog with password and SSH Key tabs
+├── commandsafety.h          # Safe ssh/scp command building and the SSHPASS environment
+├── sshconnection.h          # Connection data (host, login, password, key settings)
+├── AboutDialog.h/.cpp       # About dialog with the app version
 ├── enhanced_qtermwidget.h/.cpp # Enhanced terminal widget with improved selection
 ├── filebrowserpane.h/.cpp   # File browser: remote list, local drop target, transfers
 ├── remotefilemodel.h/.cpp   # Remote folder listing model and sorting
@@ -440,7 +453,10 @@ QtTerminalExample/
 - ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and uploads and a transfer list; replaces the Browse/Download dialogs
 - ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
 - ✅ **Start Folder** - Local terminals start in your home folder; File > Start Folder... picks another
-- ✅ **Fixes** - Default `TERM` when launched from a desktop shortcut, connection folders kept in New/Edit Connection, symlinks shown in the file browser
+- ✅ **Hidden Saved Passwords** - Passwords reach `sshpass -e` through `SSHPASS`, so they never show in the terminal, shell history or `ps`
+- ✅ **Display Platform** - `QT_QPA_PLATFORM` is honored; X11 stays the default
+- ✅ **Folder Transfers** - Unreadable or special files are skipped (and listed) instead of stopping the whole folder; symlinks shown in the local list
+- ✅ **Fixes** - Default `TERM` when launched from a desktop shortcut, connection folders kept in New/Edit Connection, file browser no longer hangs on "Connecting..." or asks for a key passphrase
 
 ### v0.6
 - ✅ **SSH Key Authentication** - SSH Key tab with private key file selection, ssh-agent option and key checks
@@ -510,14 +526,19 @@ QtTerminalExample/
 | **Connection Management** |  |  |
 | Connection Details Panel | ✅ Complete | Live connection information with action buttons |
 | Password Storage | ✅ Complete | Optional password field with show/hide toggle |
+| Hidden Saved Passwords | ✅ Complete | `sshpass -e` via environment; never on screen, in history or `ps` |
+| Connection Folders | ✅ Complete | New/Edit Connection keep the selected folder |
 | Connection Testing | ✅ Complete | Ping-based connectivity validation |
 | JSON Persistence | ✅ Complete | Automatic save/load with error recovery |
 | **File Transfer** |  |  |
-| SCP Upload/Download | ✅ Complete | Visual file transfer with progress dialogs |
-| Remote File Browser | ✅ Complete | Directory navigation with file type icons |
+| File Browser (SFTP) | ✅ Complete | WinSCP-style dock: drag-and-drop downloads/uploads, folders, transfer list |
+| View/Edit Remote Files | ✅ Complete | `F3` read-only view; `F4` edit, uploaded back on every save |
+| SCP Upload | ✅ Complete | Upload a file from the SSH tab menu |
 | Error Handling | ✅ Complete | Comprehensive error messages and recovery |
 | **Advanced Features** |  |  |
 | SSH Key Support | ✅ Complete | Per-connection key file (`ssh -i`) and SSH agent integration |
+| Local Start Folder | ✅ Complete | Choose where local terminals open (File → Start Folder...) |
+| Display Platform Choice | ✅ Complete | X11 by default, `QT_QPA_PLATFORM` overrides |
 | Password Encryption | 🚧 Planned | Secure encrypted storage implementation |
 | Connection History | 🚧 Planned | Recent connections and usage tracking |
 | Import/Export | 🚧 Planned | Configuration sharing and migration tools |
