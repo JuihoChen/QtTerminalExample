@@ -531,6 +531,17 @@ QWidget *FileBrowserPane::createLocalSection()
     connect(m_localView, &QTreeView::customContextMenuRequested,
             this, &FileBrowserPane::showLocalContextMenu);
 
+    QAction *editAction = new QAction(m_localView);
+    editAction->setShortcut(Qt::Key_F4);
+    editAction->setShortcutContext(Qt::WidgetShortcut);
+    connect(editAction, &QAction::triggered, this, [this]() {
+        QModelIndexList rows = m_localView->selectionModel()->selectedRows();
+        if (rows.size() != 1) return;
+        QString path = m_localModel->filePath(rows.first());
+        if (QFileInfo(path).isFile()) openInEditor(path);
+    });
+    m_localView->addAction(editAction);
+
     setLocalFolder(QDir::homePath());
     return section;
 }
@@ -746,6 +757,16 @@ void FileBrowserPane::showLocalContextMenu(const QPoint &pos)
         QString dir = paths.first();
         menu.addAction(style()->standardIcon(QStyle::SP_DirOpenIcon), "Open", this,
                        [this, dir]() { setLocalFolder(dir); });
+    }
+    if (paths.size() == 1 && QFileInfo(paths.first()).isFile()) {
+        // A local file is edited in place: the editor saves it directly
+        QString file = paths.first();
+        QAction *edit = menu.addAction(style()->standardIcon(QStyle::SP_FileDialogDetailedView),
+                                       "Edit", this, [this, file]() { openInEditor(file); });
+        edit->setShortcut(Qt::Key_F4);
+        menu.addAction("Edit With...", this, [this, file]() {
+            if (chooseEditor()) openInEditor(file);
+        });
     }
     if (menu.isEmpty()) return;
     menu.exec(m_localView->viewport()->mapToGlobal(pos));

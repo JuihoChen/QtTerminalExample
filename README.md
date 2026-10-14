@@ -128,6 +128,7 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 - **Upload** - Drag files or folders from the local list, or from your file manager, onto the remote list (or onto a remote subfolder). Or right-click the remote list → **Upload Files...** / **Upload Folder...**, or right-click local files → **Upload to <remote folder>**. Replacing a file on the server asks first when it's in the folder you're looking at; folders are merged.
 - **View** - Select a remote file and press `F3`, or right-click → **View**. It opens a read-only copy in your editor; nothing goes back to the server.
 - **Edit** - Select a remote file and press `F4`, or right-click → **Edit**. It opens in your editor, and every time you save there it's uploaded back to the server, like WinSCP. **Edit With...** sets the editor command (used by View too) (such as `gedit`, `kate`, `code` or `xterm -e vim`); left empty, the system's default application for the file type is used. The local copy is kept in a private temporary folder and deleted when the tab closes, so save before closing it.
+- **Edit a local file** - Select a file in the local list and press `F4`, or right-click → **Edit** (or **Edit With...**). It opens directly in your editor; there's no copy and nothing is uploaded, so saving writes the local file itself.
 - **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder), **Edit** and **Copy Path**. Double-clicking a remote file also downloads it.
 - **Transfers (bottom)** - Each download (↓) and upload (↑) with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders transfer with everything inside them. Items that can't be copied (unreadable files, pipes and other special files) are skipped and the rest still comes across; the row then says **N skipped** in amber, and hovering over it or double-clicking it lists each item and why. In a downloaded folder, symlinks are recreated as symlinks with the same target, like `cp -a`; in an uploaded folder, links to folders are skipped.
 
@@ -335,6 +336,7 @@ All SSH connections use optimized settings:
 | Parent folder | `Backspace` | Remote file list |
 | View remote file | `F3` | Remote file list |
 | Edit remote file | `F4` | Remote file list |
+| Edit local file | `F4` | Local file list |
 
 ## Troubleshooting
 
