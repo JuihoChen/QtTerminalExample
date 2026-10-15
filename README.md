@@ -16,6 +16,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
 - **🙈 Hidden Saved Passwords** - Saved passwords go to `sshpass -e` through the environment, never shown on screen, in shell history or in `ps`
 - **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
+- **📡 SSH Host Scan** - Find hosts with SSH open in an IP range, with their MAC addresses, from this computer or through a saved connection, and import them as connections
 - **📤 File Upload** - SCP upload from the SSH tab menu
 - **🏠 Local Terminal Start Folder** - Local terminals open in your home folder, or a folder you pick with File → Start Folder...
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
@@ -135,6 +136,16 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused.
 
 The file browser uses [libssh](https://www.libssh.org/) for SFTP.
+
+## SSH Host Scan
+
+Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but for SSH only. Open it with **Connections → Scan for SSH Hosts...**, right-click a folder → **Scan for SSH Hosts into <folder>...**, or right-click a connection → **Scan for SSH Hosts from Here...**.
+
+- **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). It starts out as the /24 around the scanning host.
+- **SSH port and timeout** - The port to check (22 unless set) and how long to wait for each host.
+- **Scan from** - **This computer**, or **Through** a saved connection: the scan then runs on that server (a head node or jump box) and finds the hosts only it can reach. It uses only standard Linux tools there: `ping`, a TCP check of the port (bash's `/dev/tcp` with `timeout`, or `nc`), and the ARP table in `/proc/net/arp`. Nothing is installed.
+- **Results** - One row per host that answered a ping, has the port open, or is in the ARP table, with its **IP address**, **MAC address** and **SSH open**. MAC addresses come from the scanning host's ARP table, so they show only for hosts on its own subnet (and for the scanning host itself). Hosts with the port open start checked; hosts that already have a connection are marked **(saved)**.
+- **Import** - Pick a folder and username and press **Import**. Each checked host becomes an SSH connection named after its IP address, using the scanned port. Hosts that already have a connection are skipped. Imported connections connect directly from this computer; going through the jump host isn't supported yet.
 
 ## Requirements
 
@@ -421,6 +432,7 @@ QtTerminalExample/
 ├── terminalwindow_*.cpp     # Main window split by area: ui, menus, terminal, ssh,
 │                            #   connections, appearance, filebrowser, filetransfer
 ├── connectiondialog.h/.cpp  # Connection add/edit dialog with password and SSH Key tabs
+├── hostscandialog.h/.cpp    # SSH host scan (direct or through a saved connection) and import
 ├── commandsafety.h          # Safe ssh/scp command building and the SSHPASS environment
 ├── sshconnection.h          # Connection data (host, login, password, key settings)
 ├── AboutDialog.h/.cpp       # About dialog with the app version
@@ -441,7 +453,8 @@ QtTerminalExample/
 - **SSHConnection** - Connection data structure with password support
 - **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
 - **FileBrowserPane** - One SSH tab's file browser, shown in the File Browser dock
-- **SftpWorker** - libssh SFTP session (login, listing, downloads, uploads) living on its own thread
+- **SftpWorker** - libssh session (login, SFTP listing, downloads, uploads, running a command) living on its own thread
+- **HostScanDialog** - SSH host scan and import into a connection folder
 
 ### Code Features
 - **Modern Qt Practices** - Uses Qt 5.12+ features and best practices
@@ -459,6 +472,7 @@ QtTerminalExample/
 - ✅ **Hidden Saved Passwords** - Passwords reach `sshpass -e` through `SSHPASS`, so they never show in the terminal, shell history or `ps`
 - ✅ **Display Platform** - `QT_QPA_PLATFORM` is honored; X11 stays the default
 - ✅ **Folder Transfers** - Unreadable or special files are skipped (and listed) instead of stopping the whole folder; symlinks shown in the local list
+- ✅ **SSH Host Scan** - Find hosts with SSH open (IP, MAC) from this computer or through a saved connection, and import them into a folder
 - ✅ **Smooth New Tabs** - The terminal area no longer blinks blank when a new tab opens
 - ✅ **Fixes** - Default `TERM` when launched from a desktop shortcut, connection folders kept in New/Edit Connection, file browser no longer hangs on "Connecting..." or asks for a key passphrase
 

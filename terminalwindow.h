@@ -66,6 +66,8 @@ private slots:
     void addConnectionToFolder(const QString &folderName);
     void editConnection(QTreeWidgetItem *item);
     void deleteConnection(QTreeWidgetItem *item);
+    // Scan dialog: scan from a saved connection (index) or this computer (-1)
+    void scanForHosts(int fromConnection = -1, const QString &folder = QString());
 
     // Feature 4: SSH connection slots
     void connectToSSH(QTreeWidgetItem *item);

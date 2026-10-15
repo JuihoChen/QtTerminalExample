@@ -1,6 +1,7 @@
 // Connection management (CRUD: Create、Read、Update、Delete) functionality
 #include "terminalwindow.h"
 #include "connectiondialog.h"
+#include "hostscandialog.h"
 
 #include <QMessageBox>
 #include <QTreeWidgetItem>
@@ -404,4 +405,20 @@ void TerminalWindow::addConnectionToFolder(const QString &folderName)
         
         statusBar()->showMessage(QString("Added connection: %1 to %2").arg(newConnection.name, folderName), 3000);
     }
+}
+
+void TerminalWindow::scanForHosts(int fromConnection, const QString &folder)
+{
+    HostScanDialog dialog(connections, getExistingFolders(), this);
+    dialog.setScanFrom(fromConnection);
+    dialog.setImportFolder(folder);
+    connect(&dialog, &HostScanDialog::importConnections, this,
+            [this](const QList<SSHConnection> &imported) {
+        connections.append(imported);
+        saveConnections();
+        refreshConnectionTree();
+        updateStatusBar();
+        statusBar()->showMessage(QString("Imported %1 connection(s)").arg(imported.size()), 3000);
+    });
+    dialog.exec();
 }

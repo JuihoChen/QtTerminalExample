@@ -53,12 +53,21 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addAction("🗑️ Delete Connection", [this, item]() {
                 deleteConnection(item);
             });
+            menu.addSeparator();
+            int index = item->data(0, Qt::UserRole + 1).toInt();
+            QString folder = qvariant_cast<SSHConnection>(connectionData).folder;
+            menu.addAction("🔍 Scan for SSH Hosts from Here...", [this, index, folder]() {
+                scanForHosts(index, folder);
+            });
         } else {
             // This is a folder
             QString folderName = item->data(0, Qt::UserRole + 2).toString();
             if (!folderName.isEmpty()) {
                 menu.addAction("➕ Add Connection to " + folderName, [this, folderName]() {
                     addConnectionToFolder(folderName);
+                });
+                menu.addAction("🔍 Scan for SSH Hosts into " + folderName + "...", [this, folderName]() {
+                    scanForHosts(-1, folderName);
                 });
                 menu.addSeparator();
             }

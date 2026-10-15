@@ -11,7 +11,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt5 COMPONENTS Core Widgets Gui REQUIRED)
+find_package(Qt5 COMPONENTS Core Widgets Gui Network REQUIRED)
 
 # libssh provides SFTP for the file browser
 find_package(PkgConfig REQUIRED)
@@ -34,6 +34,7 @@ add_executable(QtTerminalExample
     remotefilemodel.cpp
     filebrowserpane.cpp
     connectiondialog.cpp
+    hostscandialog.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
 )
@@ -84,6 +85,7 @@ target_link_libraries(QtTerminalExample
     Qt5::Core
     Qt5::Widgets 
     Qt5::Gui
+    Qt5::Network
     PkgConfig::LIBSSH
     # Link directly to the target, which resolves dependencies automatically
     ${QTERMWIDGET_LIBRARY}
