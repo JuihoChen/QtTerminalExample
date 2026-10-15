@@ -139,7 +139,7 @@ The file browser uses [libssh](https://www.libssh.org/) for SFTP.
 
 ## SSH Host Scan
 
-Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but for SSH only. Open it with **Connections → Scan for SSH Hosts...**, right-click a folder → **Scan for SSH Hosts into <folder>...**, or right-click a connection → **Scan for SSH Hosts from Here...**.
+Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but for SSH only. Open it with **Connections → Scan for SSH Hosts...**, right-click a folder → **Scan for SSH Hosts into <folder>...**, or right-click a connection → **Scan for SSH Hosts from Here...**. It opens as a **🔍 SSH Scan** tab beside the terminal tabs, so the results stay put while you work in a terminal, and a scan keeps running when you switch tabs. Close the tab to stop a scan.
 
 - **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). It starts out as the /24 around the scanning host.
 - **SSH port and timeout** - The port to check (22 unless set) and how long to wait for each host.
@@ -432,7 +432,7 @@ QtTerminalExample/
 ├── terminalwindow_*.cpp     # Main window split by area: ui, menus, terminal, ssh,
 │                            #   connections, appearance, filebrowser, filetransfer
 ├── connectiondialog.h/.cpp  # Connection add/edit dialog with password and SSH Key tabs
-├── hostscandialog.h/.cpp    # SSH host scan (direct or through a saved connection) and import
+├── hostscantab.h/.cpp       # SSH host scan tab (direct or through a saved connection) and import
 ├── commandsafety.h          # Safe ssh/scp command building and the SSHPASS environment
 ├── sshconnection.h          # Connection data (host, login, password, key settings)
 ├── AboutDialog.h/.cpp       # About dialog with the app version
@@ -454,7 +454,7 @@ QtTerminalExample/
 - **GripSplitter/GripSplitterHandle** - Custom splitter with visual drag handles
 - **FileBrowserPane** - One SSH tab's file browser, shown in the File Browser dock
 - **SftpWorker** - libssh session (login, SFTP listing, downloads, uploads, running a command) living on its own thread
-- **HostScanDialog** - SSH host scan and import into a connection folder
+- **HostScanTab** - SSH host scan tab and import into a connection folder
 
 ### Code Features
 - **Modern Qt Practices** - Uses Qt 5.12+ features and best practices

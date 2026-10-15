@@ -93,7 +93,14 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
     if (tabIndex == -1) return;
     
     QTermWidget *terminal = qobject_cast<QTermWidget*>(tabWidget->widget(tabIndex));
-    if (!terminal) return;
+    if (!terminal) {
+        // The scan tab
+        QMenu menu;
+        menu.addAction("📋 New Tab", this, &TerminalWindow::newTab);
+        menu.addAction("❌ Close Tab", [this, tabIndex]() { closeTab(tabIndex); });
+        menu.exec(tabWidget->tabBar()->mapToGlobal(pos));
+        return;
+    }
     
     // Check if this is an SSH terminal
     bool isSSH = terminal->property("isSSHTerminal").toBool();

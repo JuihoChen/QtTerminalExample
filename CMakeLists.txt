@@ -34,7 +34,7 @@ add_executable(QtTerminalExample
     remotefilemodel.cpp
     filebrowserpane.cpp
     connectiondialog.cpp
-    hostscandialog.cpp
+    hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
 )

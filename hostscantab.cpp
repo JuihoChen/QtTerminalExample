@@ -1,10 +1,9 @@
 // SSH host scanner: find hosts with SSH open in an IPv4 range and import them
-#include "hostscandialog.h"
+#include "hostscantab.h"
 #include "commandsafety.h"
 #include "sftpworker.h"
 
 #include <QComboBox>
-#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -47,25 +46,19 @@ public:
 
 } // namespace
 
-HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QStringList &folders,
+HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringList &folders,
                                QWidget *parent)
-    : QDialog(parent), m_connections(connections), m_rangeEdited(false),
+    : QWidget(parent), m_rangeEdited(false),
       m_process(nullptr), m_workerThread(nullptr), m_worker(nullptr),
       m_scanning(false), m_stopRequested(false), m_section(Probes),
       m_rangeStart(0), m_rangeEnd(0), m_scanPort(22), m_done(0),
       m_noPortCheck(false), m_noPing(false)
 {
-    setWindowTitle("Scan for SSH Hosts");
-    resize(680, 700);
-
-    for (const SSHConnection &conn : connections) {
-        m_savedHosts.insert(conn.host.trimmed().toLower());
-    }
-
     QVBoxLayout *layout = new QVBoxLayout(this);
 
     // Range and options
     QGroupBox *rangeGroup = new QGroupBox("Scan", this);
+    rangeGroup->setMaximumWidth(820);
     QFormLayout *form = new QFormLayout(rangeGroup);
 
     QRegularExpression ipPattern("^[0-9.]{0,15}$");
@@ -82,6 +75,8 @@ HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QS
     rangeRow->addWidget(new QLabel("to", this));
     rangeRow->addWidget(m_endEdit);
     form->addRow("IP range:", rangeRow);
+    connect(m_startEdit, &QLineEdit::returnPressed, this, &HostScanTab::startScan);
+    connect(m_endEdit, &QLineEdit::returnPressed, this, &HostScanTab::startScan);
 
     m_portSpin = new QSpinBox(this);
     m_portSpin->setRange(1, 65535);
@@ -99,15 +94,8 @@ HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QS
     form->addRow("SSH port:", optionsRow);
 
     m_scanFromCombo = new QComboBox(this);
-    m_scanFromCombo->addItem("This computer", -1);
-    for (int i = 0; i < connections.size(); ++i) {
-        const SSHConnection &conn = connections[i];
-        QString label = QString("%1 (%2@%3)").arg(conn.name, conn.username, conn.host);
-        if (!conn.folder.isEmpty()) label = conn.folder + " / " + label;
-        m_scanFromCombo->addItem("Through " + label, i);
-    }
     connect(m_scanFromCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &HostScanDialog::onScanFromChanged);
+            this, &HostScanTab::onScanFromChanged);
     form->addRow("Scan from:", m_scanFromCombo);
 
     m_scanFromNote = new QLabel(this);
@@ -119,11 +107,10 @@ HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QS
     m_progress = new QProgressBar(this);
     m_progress->setTextVisible(false);
     m_scanButton = new QPushButton("🔍 Scan", this);
-    m_scanButton->setDefault(true);
     m_stopButton = new QPushButton("Stop", this);
     m_stopButton->setEnabled(false);
-    connect(m_scanButton, &QPushButton::clicked, this, &HostScanDialog::startScan);
-    connect(m_stopButton, &QPushButton::clicked, this, &HostScanDialog::stopScan);
+    connect(m_scanButton, &QPushButton::clicked, this, &HostScanTab::startScan);
+    connect(m_stopButton, &QPushButton::clicked, this, &HostScanTab::stopScan);
     scanRow->addWidget(m_progress, 1);
     scanRow->addWidget(m_scanButton);
     scanRow->addWidget(m_stopButton);
@@ -140,7 +127,7 @@ HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QS
     m_results->header()->setSectionResizeMode(IpColumn, QHeaderView::ResizeToContents);
     m_results->header()->setSectionResizeMode(MacColumn, QHeaderView::ResizeToContents);
     m_results->setColumnWidth(IpColumn, 160);
-    connect(m_results, &QTreeWidget::itemChanged, this, &HostScanDialog::updateImportButton);
+    connect(m_results, &QTreeWidget::itemChanged, this, &HostScanTab::updateImportButton);
     layout->addWidget(m_results, 1);
 
     m_statusLabel = new QLabel("Hosts that answer a ping, have the port open, or appear in the "
@@ -150,32 +137,75 @@ HostScanDialog::HostScanDialog(const QList<SSHConnection> &connections, const QS
 
     // Import
     QGroupBox *importGroup = new QGroupBox("Import checked hosts as SSH connections", this);
-    QFormLayout *importForm = new QFormLayout(importGroup);
+    importGroup->setMaximumWidth(820);
+    QHBoxLayout *importRow = new QHBoxLayout(importGroup);
     m_folderCombo = new QComboBox(this);
     m_folderCombo->setEditable(true);
-    m_folderCombo->addItems(folders);
-    importForm->addRow("Folder:", m_folderCombo);
+    m_folderCombo->setMinimumWidth(160);
+    importRow->addWidget(new QLabel("Folder:", this));
+    importRow->addWidget(m_folderCombo, 1);
     m_usernameEdit = new QLineEdit(this);
     m_usernameEdit->setPlaceholderText("SSH username for the new connections");
     QByteArray user = qgetenv("USER");
     if (user.isEmpty()) user = qgetenv("LOGNAME");
     m_usernameEdit->setText(QString::fromLocal8Bit(user));
-    connect(m_usernameEdit, &QLineEdit::textChanged, this, &HostScanDialog::updateImportButton);
-    importForm->addRow("Username:", m_usernameEdit);
+    connect(m_usernameEdit, &QLineEdit::textChanged, this, &HostScanTab::updateImportButton);
+    importRow->addSpacing(12);
+    importRow->addWidget(new QLabel("Username:", this));
+    importRow->addWidget(m_usernameEdit, 1);
     m_importButton = new QPushButton("Import", this);
     m_importButton->setEnabled(false);
-    connect(m_importButton, &QPushButton::clicked, this, &HostScanDialog::importChecked);
-    importForm->addRow("", m_importButton);
+    connect(m_importButton, &QPushButton::clicked, this, &HostScanTab::importChecked);
+    importRow->addSpacing(12);
+    importRow->addWidget(m_importButton);
     layout->addWidget(importGroup);
 
-    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    connect(buttons, &QDialogButtonBox::rejected, this, &HostScanDialog::reject);
-    layout->addWidget(buttons);
-
+    setConnections(connections, folders);
     onScanFromChanged();
 }
 
-HostScanDialog::~HostScanDialog()
+void HostScanTab::setConnections(const QList<SSHConnection> &connections, const QStringList &folders)
+{
+    m_connections = connections;
+    m_savedHosts.clear();
+    for (const SSHConnection &conn : connections) {
+        m_savedHosts.insert(conn.host.trimmed().toLower());
+    }
+
+    // Rebuild "Scan from", keeping the current choice if it still exists
+    const SSHConnection *current = scanFromConnection();
+    QString currentKey = current ? current->folder + '\n' + current->name : QString();
+    {
+        QSignalBlocker blocker(m_scanFromCombo);
+        m_scanFromCombo->clear();
+        m_scanFromCombo->addItem("This computer", -1);
+        for (int i = 0; i < connections.size(); ++i) {
+            const SSHConnection &conn = connections[i];
+            QString label = QString("%1 (%2@%3)").arg(conn.name, conn.username, conn.host);
+            if (!conn.folder.isEmpty()) label = conn.folder + " / " + label;
+            m_scanFromCombo->addItem("Through " + label, i);
+            if (conn.folder + '\n' + conn.name == currentKey) {
+                m_scanFromCombo->setCurrentIndex(m_scanFromCombo->count() - 1);
+            }
+        }
+    }
+
+    QString folder = m_folderCombo->currentText();
+    m_folderCombo->clear();
+    m_folderCombo->addItems(folders);
+    if (!folder.isEmpty()) setImportFolder(folder);
+
+    // Refresh the "(saved)" marks on the results
+    QSignalBlocker blocker(m_results);
+    for (auto it = m_rows.constBegin(); it != m_rows.constEnd(); ++it) {
+        QString ip = formatIPv4(it.key());
+        bool saved = m_savedHosts.contains(ip);
+        it.value()->setText(IpColumn, saved ? ip + "  (saved)" : ip);
+        it.value()->setToolTip(IpColumn, saved ? QStringLiteral("Already saved as a connection") : QString());
+    }
+}
+
+HostScanTab::~HostScanTab()
 {
     if (m_process) {
         m_process->disconnect(this);
@@ -185,26 +215,26 @@ HostScanDialog::~HostScanDialog()
     stopRemoteWorker();
 }
 
-void HostScanDialog::setScanFrom(int connectionIndex)
+void HostScanTab::setScanFrom(int connectionIndex)
 {
     int comboIndex = m_scanFromCombo->findData(connectionIndex);
     if (comboIndex >= 0) m_scanFromCombo->setCurrentIndex(comboIndex);
 }
 
-void HostScanDialog::setImportFolder(const QString &folder)
+void HostScanTab::setImportFolder(const QString &folder)
 {
     if (folder.isEmpty()) return;
     if (m_folderCombo->findText(folder) < 0) m_folderCombo->addItem(folder);
     m_folderCombo->setCurrentText(folder);
 }
 
-const SSHConnection *HostScanDialog::scanFromConnection() const
+const SSHConnection *HostScanTab::scanFromConnection() const
 {
     int index = m_scanFromCombo->currentData().toInt();
     return index >= 0 && index < m_connections.size() ? &m_connections[index] : nullptr;
 }
 
-void HostScanDialog::onScanFromChanged()
+void HostScanTab::onScanFromChanged()
 {
     const SSHConnection *via = scanFromConnection();
     if (via) {
@@ -220,7 +250,7 @@ void HostScanDialog::onScanFromChanged()
 }
 
 // Suggests the /24 around the scanning host
-void HostScanDialog::setDefaultRange()
+void HostScanTab::setDefaultRange()
 {
     quint32 base = 0;
     const SSHConnection *via = scanFromConnection();
@@ -246,7 +276,7 @@ void HostScanDialog::setDefaultRange()
     m_endEdit->setText(formatIPv4(base | 254));
 }
 
-bool HostScanDialog::parseIPv4(const QString &text, quint32 *address)
+bool HostScanTab::parseIPv4(const QString &text, quint32 *address)
 {
     QStringList parts = text.split('.');
     if (parts.size() != 4) return false;
@@ -261,7 +291,7 @@ bool HostScanDialog::parseIPv4(const QString &text, quint32 *address)
     return true;
 }
 
-QString HostScanDialog::formatIPv4(quint32 address)
+QString HostScanTab::formatIPv4(quint32 address)
 {
     return QString("%1.%2.%3.%4").arg(address >> 24).arg((address >> 16) & 255)
                                   .arg((address >> 8) & 255).arg(address & 255);
@@ -272,7 +302,7 @@ QString HostScanDialog::formatIPv4(quint32 address)
 // after "ARP" and the scanning host's own addresses after "SELF". Probing
 // fills the ARP table, so it is read last. Uses bash's /dev/tcp with
 // coreutils timeout for the port check, or nc when those are missing.
-QString HostScanDialog::scanScript(quint32 start, quint32 end, int port, int timeoutSeconds)
+QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeoutSeconds)
 {
     QString script = QString(
         "S=%1 E=%2 P=%3 T=%4 J=%5\n"
@@ -308,7 +338,7 @@ QString HostScanDialog::scanScript(quint32 start, quint32 end, int port, int tim
     return script;
 }
 
-void HostScanDialog::startScan()
+void HostScanTab::startScan()
 {
     quint32 start = 0, end = 0;
     if (!parseIPv4(m_startEdit->text().trimmed(), &start)) {
@@ -381,15 +411,16 @@ void HostScanDialog::startScan()
     m_workerThread = new QThread(this);
     m_worker = new SftpWorker(*via);
     m_worker->moveToThread(m_workerThread);
-    connect(m_worker, &SftpWorker::step, this, [this, via](const QString &step) {
+    QString viaHost = via->host;
+    connect(m_worker, &SftpWorker::step, this, [this, viaHost](const QString &step) {
         if (step == "Running command") {
             m_statusLabel->setText(QString("Scanning %1 addresses from %2...")
-                                       .arg(m_rangeEnd - m_rangeStart + 1).arg(via->host));
+                                       .arg(m_rangeEnd - m_rangeStart + 1).arg(viaHost));
         } else {
             m_statusLabel->setText(step + "...");
         }
     });
-    connect(m_worker, &SftpWorker::commandOutput, this, &HostScanDialog::handleOutput);
+    connect(m_worker, &SftpWorker::commandOutput, this, &HostScanTab::handleOutput);
     connect(m_worker, &SftpWorker::commandFinished, this, [this](int, const QString &error) {
         stopRemoteWorker();
         finishScan(m_stopRequested ? QString() : error);
@@ -399,7 +430,7 @@ void HostScanDialog::startScan()
                               Q_ARG(QString, "sh -c " + CommandSafetyHelper::escapeShellArgument(script)));
 }
 
-void HostScanDialog::stopScan()
+void HostScanTab::stopScan()
 {
     if (!m_scanning) return;
     m_stopRequested = true;
@@ -408,7 +439,7 @@ void HostScanDialog::stopScan()
     if (m_worker) m_worker->abortConnection();
 }
 
-void HostScanDialog::stopRemoteWorker()
+void HostScanTab::stopRemoteWorker()
 {
     if (!m_worker) return;
     m_worker->abortConnection();
@@ -420,7 +451,7 @@ void HostScanDialog::stopRemoteWorker()
     m_workerThread = nullptr;
 }
 
-void HostScanDialog::handleOutput(const QByteArray &data)
+void HostScanTab::handleOutput(const QByteArray &data)
 {
     m_pending += data;
     int newline;
@@ -431,7 +462,7 @@ void HostScanDialog::handleOutput(const QByteArray &data)
     }
 }
 
-void HostScanDialog::handleLine(const QString &line)
+void HostScanTab::handleLine(const QString &line)
 {
     if (line == "ARP") { m_section = Arp; return; }
     if (line == "SELF") { m_section = Self; return; }
@@ -469,7 +500,7 @@ void HostScanDialog::handleLine(const QString &line)
     }
 }
 
-QTreeWidgetItem *HostScanDialog::rowFor(quint32 address)
+QTreeWidgetItem *HostScanTab::rowFor(quint32 address)
 {
     QTreeWidgetItem *row = m_rows.value(address);
     if (row) return row;
@@ -484,7 +515,7 @@ QTreeWidgetItem *HostScanDialog::rowFor(quint32 address)
     return row;
 }
 
-void HostScanDialog::setRowSsh(QTreeWidgetItem *row, bool open)
+void HostScanTab::setRowSsh(QTreeWidgetItem *row, bool open)
 {
     QSignalBlocker blocker(m_results);
     if (m_noPortCheck) {
@@ -497,7 +528,7 @@ void HostScanDialog::setRowSsh(QTreeWidgetItem *row, bool open)
     row->setData(SshColumn, Qt::UserRole, open);
 }
 
-void HostScanDialog::finishScan(const QString &error)
+void HostScanTab::finishScan(const QString &error)
 {
     handleOutput("\n");
 
@@ -537,7 +568,7 @@ void HostScanDialog::finishScan(const QString &error)
     updateImportButton();
 }
 
-void HostScanDialog::setScanning(bool scanning)
+void HostScanTab::setScanning(bool scanning)
 {
     m_scanning = scanning;
     m_scanButton->setEnabled(!scanning);
@@ -550,7 +581,7 @@ void HostScanDialog::setScanning(bool scanning)
     updateImportButton();
 }
 
-void HostScanDialog::updateImportButton()
+void HostScanTab::updateImportButton()
 {
     int checked = 0;
     for (QTreeWidgetItem *row : m_rows) {
@@ -560,7 +591,7 @@ void HostScanDialog::updateImportButton()
     m_importButton->setEnabled(!m_scanning && checked > 0 && !m_usernameEdit->text().trimmed().isEmpty());
 }
 
-void HostScanDialog::importChecked()
+void HostScanTab::importChecked()
 {
     QString folder = m_folderCombo->currentText().trimmed();
     QString username = m_usernameEdit->text().trimmed();
@@ -594,10 +625,4 @@ void HostScanDialog::importChecked()
     if (skipped) message += QString(" Skipped %1 already saved.").arg(skipped);
     m_statusLabel->setText(message);
     updateImportButton();
-}
-
-void HostScanDialog::reject()
-{
-    stopScan();
-    QDialog::reject();
 }

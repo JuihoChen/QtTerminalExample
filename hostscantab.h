@@ -1,7 +1,7 @@
-#ifndef HOSTSCANDIALOG_H
-#define HOSTSCANDIALOG_H
+#ifndef HOSTSCANTAB_H
+#define HOSTSCANTAB_H
 
-#include <QDialog>
+#include <QWidget>
 #include <QHash>
 #include <QList>
 #include <QSet>
@@ -24,23 +24,26 @@ QT_END_NAMESPACE
 
 class SftpWorker;
 
-// Finds hosts with SSH open in an IPv4 range, from this computer or through
+// A tab beside the terminals (like mRemoteNG's Port Scan) that finds hosts with SSH open in an IPv4 range, from this computer or through
 // a saved SSH connection, and imports them as new connections. Both run the
 // same shell script (ping sweep, TCP check of the SSH port, then the ARP
 // table for MAC addresses); it needs only standard Linux tools.
-class HostScanDialog : public QDialog
+class HostScanTab : public QWidget
 {
     Q_OBJECT
 
 public:
-    HostScanDialog(const QList<SSHConnection> &connections, const QStringList &folders,
+    HostScanTab(const QList<SSHConnection> &connections, const QStringList &folders,
                    QWidget *parent = nullptr);
-    ~HostScanDialog() override;
+    ~HostScanTab() override;
 
     // Preselect where to scan from (an index into connections, or -1 for
     // this computer) and which folder to import into
     void setScanFrom(int connectionIndex);
     void setImportFolder(const QString &folder);
+    // Keeps "Scan from" and the saved-host marks in step with the connection list
+    void setConnections(const QList<SSHConnection> &connections, const QStringList &folders);
+    bool isScanning() const { return m_scanning; }
 
     // Builds the scan script; public so it can be tested on its own
     static QString scanScript(quint32 start, quint32 end, int port, int timeoutSeconds);
@@ -50,9 +53,6 @@ public:
 signals:
     // The new connections to save; hosts that already have one are left out
     void importConnections(const QList<SSHConnection> &connections);
-
-protected:
-    void reject() override;
 
 private slots:
     void onScanFromChanged();
@@ -109,4 +109,4 @@ private:
     QHash<quint32, QString> m_macs;   // From the ARP table and the scanning host's own addresses
 };
 
-#endif // HOSTSCANDIALOG_H
+#endif // HOSTSCANTAB_H
