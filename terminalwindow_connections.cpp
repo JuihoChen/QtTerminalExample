@@ -1,6 +1,7 @@
 // Connection management (CRUD: Create、Read、Update、Delete) functionality
 #include "terminalwindow.h"
 #include "connectiondialog.h"
+#include "hostscantab.h"
 
 #include <QMessageBox>
 #include <QTreeWidgetItem>
@@ -139,6 +140,7 @@ void TerminalWindow::saveConnections()
 void TerminalWindow::refreshConnectionTree()
 {
     connectionTree->clear();
+    if (hostScanTab) hostScanTab->setConnections(connections, getExistingFolders());
     
     // Clear selection and config panel
     clearConnectionConfig();
@@ -404,4 +406,26 @@ void TerminalWindow::addConnectionToFolder(const QString &folderName)
         
         statusBar()->showMessage(QString("Added connection: %1 to %2").arg(newConnection.name, folderName), 3000);
     }
+}
+
+// Opens the scan tab beside the terminals, or switches to it if it's open
+void TerminalWindow::scanForHosts(int fromConnection, const QString &folder)
+{
+    if (!hostScanTab) {
+        hostScanTab = new HostScanTab(connections, getExistingFolders(), tabWidget);
+        connect(hostScanTab, &HostScanTab::importConnections, this,
+                [this](const QList<SSHConnection> &imported) {
+            connections.append(imported);
+            saveConnections();
+            refreshConnectionTree();
+            updateStatusBar();
+            statusBar()->showMessage(QString("Imported %1 connection(s)").arg(imported.size()), 3000);
+        });
+        tabWidget->addTab(hostScanTab, "🔍 SSH Scan");
+    }
+    if (!hostScanTab->isScanning()) {
+        hostScanTab->setScanFrom(fromConnection);
+        hostScanTab->setImportFolder(folder);
+    }
+    tabWidget->setCurrentWidget(hostScanTab);
 }

@@ -134,6 +134,7 @@ void TerminalWindow::setupMenus()
     // Connections menu (Feature 3)
     QMenu *connectionsMenu = menuBar->addMenu("&Connections");
     connectionsMenu->addAction("&New Connection...", this, &TerminalWindow::addNewConnection, QKeySequence(Qt::CTRL + Qt::Key_N));
+    connectionsMenu->addAction("&Scan for SSH Hosts...", this, [this]() { scanForHosts(); });
     connectionsMenu->addSeparator();
     connectionsMenu->addAction("&Refresh", this, [this]() {
         loadConnections();

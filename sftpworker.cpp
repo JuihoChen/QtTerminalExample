@@ -180,6 +180,51 @@ void SftpWorker::connectToServer()
     emit connected(homePath);
 }
 
+void SftpWorker::runCommand(const QString &command)
+{
+    BusyScope scope(this);
+    QString error;
+    if (!ensureSession(&error)) {
+        emit commandFinished(-1, error);
+        return;
+    }
+
+    emit step("Running command");
+    ssh_channel channel = ssh_channel_new(m_session);
+    if (!channel || ssh_channel_open_session(channel) != SSH_OK
+        || ssh_channel_request_exec(channel, command.toUtf8().constData()) != SSH_OK) {
+        error = QString("The server would not run the command: %1").arg(ssh_get_error(m_session));
+        if (channel) ssh_channel_free(channel);
+        emit commandFinished(-1, error);
+        return;
+    }
+
+    char buffer[4096];
+    while (true) {
+        // Short reads so abortConnection() is noticed quickly
+        int n = ssh_channel_read_timeout(channel, buffer, sizeof(buffer), 0, 500);
+        if (n > 0) {
+            emit commandOutput(QByteArray(buffer, n));
+        } else if (n == SSH_ERROR || wasAborted()) {
+            error = wasAborted() ? QStringLiteral("Cancelled")
+                                 : QString("Lost the connection: %1").arg(ssh_get_error(m_session));
+            break;
+        } else if (ssh_channel_is_eof(channel)) {
+            break;
+        }
+    }
+
+    int status = -1;
+    if (error.isEmpty()) {
+        ssh_channel_send_eof(channel);
+        status = ssh_channel_get_exit_status(channel);
+    }
+    ssh_channel_close(channel);
+    ssh_channel_free(channel);
+    if (!error.isEmpty()) disconnectFromServer();
+    emit commandFinished(status, error);
+}
+
 void SftpWorker::disconnectFromServer()
 {
     {
@@ -200,6 +245,28 @@ void SftpWorker::disconnectFromServer()
 bool SftpWorker::ensureConnected(QString *error)
 {
     if (m_sftp) return true;
+    if (!ensureSession(error)) return false;
+
+    emit step("Starting SFTP");
+    m_sftp = sftp_new(m_session);
+    if (!m_sftp || sftp_init(m_sftp) != SSH_OK) {
+        *error = QString("The server did not start SFTP: %1").arg(ssh_get_error(m_session));
+        disconnectFromServer();
+        return false;
+    }
+
+    // libssh waits for each write's reply before sending the next, so fewer,
+    // larger writes upload much faster. OpenSSH accepts up to 255 KB per
+    // write; other servers are only required to take 32 KB.
+    const char *banner = ssh_get_serverbanner(m_session);
+    m_writeChunk = banner && strstr(banner, "OpenSSH") ? kOpenSshWriteChunk : kReadChunk;
+    return true;
+}
+
+// Connects and logs in, without starting SFTP
+bool SftpWorker::ensureSession(QString *error)
+{
+    if (m_session && ssh_is_connected(m_session)) return true;
     disconnectFromServer();
 
     m_session = ssh_new();
@@ -240,20 +307,6 @@ bool SftpWorker::ensureConnected(QString *error)
         disconnectFromServer();
         return false;
     }
-
-    emit step("Starting SFTP");
-    m_sftp = sftp_new(m_session);
-    if (!m_sftp || sftp_init(m_sftp) != SSH_OK) {
-        *error = QString("The server did not start SFTP: %1").arg(ssh_get_error(m_session));
-        disconnectFromServer();
-        return false;
-    }
-
-    // libssh waits for each write's reply before sending the next, so fewer,
-    // larger writes upload much faster. OpenSSH accepts up to 255 KB per
-    // write; other servers are only required to take 32 KB.
-    const char *banner = ssh_get_serverbanner(m_session);
-    m_writeChunk = banner && strstr(banner, "OpenSSH") ? kOpenSshWriteChunk : kReadChunk;
     return true;
 }
 

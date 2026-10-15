@@ -8,6 +8,7 @@
 #include <QGroupBox>
 #include <QProgressDialog>
 #include <QHash>
+#include <QPointer>
 
 #include "qtermwidget.h"
 #include "sshconnection.h"
@@ -26,6 +27,7 @@ class QPushButton;
 QT_END_NAMESPACE
 
 class FileBrowserPane;
+class HostScanTab;
 
 class TerminalWindow : public QMainWindow
 {
@@ -66,6 +68,8 @@ private slots:
     void addConnectionToFolder(const QString &folderName);
     void editConnection(QTreeWidgetItem *item);
     void deleteConnection(QTreeWidgetItem *item);
+    // Scan dialog: scan from a saved connection (index) or this computer (-1)
+    void scanForHosts(int fromConnection = -1, const QString &folder = QString());
 
     // Feature 4: SSH connection slots
     void connectToSSH(QTreeWidgetItem *item);
@@ -154,6 +158,9 @@ private:
     QStackedWidget *fileBrowserStack;
     QLabel *fileBrowserPlaceholder;
     QHash<QWidget*, FileBrowserPane*> fileBrowserPanes;
+
+    // SSH host scan tab, shown beside the terminal tabs while open
+    QPointer<HostScanTab> hostScanTab;
 
     // Store connections
     QList<SSHConnection> connections;

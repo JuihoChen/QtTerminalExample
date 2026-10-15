@@ -62,6 +62,9 @@ public slots:
     // Copies a local file or folder to remotePath, replacing a file there
     void upload(int jobId, const QString &localPath, const QString &remotePath);
     void disconnectFromServer();
+    // Runs a shell command on the server (no SFTP needed), sending its
+    // output as it arrives with commandOutput(), then commandFinished()
+    void runCommand(const QString &command);
 
 signals:
     // busy(true) when a request starts and busy(false) when it ends; step()
@@ -78,9 +81,13 @@ signals:
     // A folder transfer that skipped some items still succeeds, with the
     // skipped items and the reasons in error, one per line
     void transferFinished(int jobId, bool success, const QString &error);
+    void commandOutput(const QByteArray &data);
+    // error is empty when the command ran; exitStatus is then its exit code
+    void commandFinished(int exitStatus, const QString &error);
 
 private:
     bool ensureConnected(QString *error);
+    bool ensureSession(QString *error);
     bool authenticate(QString *error);
     bool authenticateWithKeys(int methods, QStringList *tried);
     bool authenticateWithPassword(int methods, QStringList *tried);

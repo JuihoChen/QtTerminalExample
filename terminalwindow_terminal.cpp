@@ -2,6 +2,7 @@
 #include "terminalwindow.h"
 #include "enhanced_qtermwidget.h"
 #include "commandsafety.h"
+#include "hostscantab.h"
 
 #include <QFont>
 #include <QTimer>
@@ -158,14 +159,23 @@ void TerminalWindow::addTerminalTab(QTermWidget *terminal, const QString &title)
 
 void TerminalWindow::closeTab(int index)
 {
-    if (tabWidget->count() <= 1) {
-        // For the last tab, just close the window directly without asking
+    QWidget *widget = tabWidget->widget(index);
+    if (widget && widget == hostScanTab) {
+        // Closing the scan tab never closes the window; a running scan stops
+        tabWidget->removeTab(index);
+        widget->deleteLater();
+        updateStatusBar();
+        return;
+    }
+
+    int terminalTabs = tabWidget->count() - (hostScanTab ? 1 : 0);
+    if (terminalTabs <= 1) {
+        // For the last terminal, just close the window directly without asking
         // The closeEvent() will handle the confirmation
         close();
         return;
     }
     
-    QWidget *widget = tabWidget->widget(index);
     if (!confirmCloseWithTransfers(widget)) return;
     removeFileBrowserPane(widget);
     tabWidget->removeTab(index);
@@ -236,7 +246,7 @@ void TerminalWindow::onTerminalFinished()
     }
     
     // For local terminals that actually finished, continue with normal closure logic
-    if (tabWidget->count() <= 1) {
+    if (tabWidget->count() - (hostScanTab ? 1 : 0) <= 1) {
         QApplication::quit();
         return;
     }
@@ -252,6 +262,7 @@ void TerminalWindow::onTerminalFinished()
 void TerminalWindow::copyClipboard()
 {
         QTermWidget *terminal = getCurrentTerminal();
+        if (!terminal) return;  // The scan tab has no terminal
         //if (terminal) terminal->copyClipboard();
         QString text = terminal->selectedText(true);
         if (!text.isEmpty()) QApplication::clipboard()->setText(text);

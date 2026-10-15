@@ -53,12 +53,21 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addAction("🗑️ Delete Connection", [this, item]() {
                 deleteConnection(item);
             });
+            menu.addSeparator();
+            int index = item->data(0, Qt::UserRole + 1).toInt();
+            QString folder = qvariant_cast<SSHConnection>(connectionData).folder;
+            menu.addAction("🔍 Scan for SSH Hosts from Here...", [this, index, folder]() {
+                scanForHosts(index, folder);
+            });
         } else {
             // This is a folder
             QString folderName = item->data(0, Qt::UserRole + 2).toString();
             if (!folderName.isEmpty()) {
                 menu.addAction("➕ Add Connection to " + folderName, [this, folderName]() {
                     addConnectionToFolder(folderName);
+                });
+                menu.addAction("🔍 Scan for SSH Hosts into " + folderName + "...", [this, folderName]() {
+                    scanForHosts(-1, folderName);
                 });
                 menu.addSeparator();
             }
@@ -84,7 +93,14 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
     if (tabIndex == -1) return;
     
     QTermWidget *terminal = qobject_cast<QTermWidget*>(tabWidget->widget(tabIndex));
-    if (!terminal) return;
+    if (!terminal) {
+        // The scan tab
+        QMenu menu;
+        menu.addAction("📋 New Tab", this, &TerminalWindow::newTab);
+        menu.addAction("❌ Close Tab", [this, tabIndex]() { closeTab(tabIndex); });
+        menu.exec(tabWidget->tabBar()->mapToGlobal(pos));
+        return;
+    }
     
     // Check if this is an SSH terminal
     bool isSSH = terminal->property("isSSHTerminal").toBool();
