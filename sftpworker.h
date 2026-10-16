@@ -37,6 +37,8 @@ Q_DECLARE_METATYPE(QVector<RemoteEntry>)
 
 // Talks SFTP to one server through libssh. Lives in its own QThread; every
 // slot blocks that thread, so call them with queued connections only.
+class QThread;
+
 class SftpWorker : public QObject
 {
     Q_OBJECT
@@ -52,6 +54,13 @@ public:
     // Thread-safe: cut the connection so a call blocked on an unresponsive
     // server returns with an error (libssh's SFTP reads have no timeout)
     void abortConnection();
+
+    // Stops the worker and lets its thread finish on its own, then frees
+    // both. Never waits: the thread may be stuck on a server that doesn't
+    // answer, and waiting for it would freeze the app.
+    static void retire(QThread *thread, SftpWorker *worker);
+    // At exit: gives retired workers up to msecs to close their connections
+    static void waitForRetired(int msecs);
 
     static QString formatPermissions(quint32 permissions, bool isDir, bool isLink);
 
@@ -90,6 +99,7 @@ signals:
 private:
     bool ensureConnected(QString *error);
     bool ensureSession(QString *error);
+    bool connectSession(QString *error);
     bool authenticate(QString *error);
     bool authenticateWithKeys(int methods, QStringList *tried);
     bool authenticateWithPassword(int methods, QStringList *tried);

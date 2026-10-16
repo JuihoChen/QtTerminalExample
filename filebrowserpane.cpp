@@ -304,24 +304,10 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
 
 FileBrowserPane::~FileBrowserPane()
 {
-    // Stop downloads at the next chunk, and cut connections that may be
-    // stuck waiting on the server, so the threads can finish quickly
-    m_browseWorker->cancelAll();
-    m_browseWorker->abortConnection();
-    if (m_transferWorker) {
-        m_transferWorker->cancelAll();
-        m_transferWorker->abortConnection();
-    }
-
-    m_browseThread->quit();
-    m_browseThread->wait();
-    delete m_browseWorker;
-
-    if (m_transferThread) {
-        m_transferThread->quit();
-        m_transferThread->wait();
-        delete m_transferWorker;
-    }
+    // The workers may be waiting on a server that doesn't answer, so let
+    // them finish in the background instead of freezing the app here
+    SftpWorker::retire(m_browseThread, m_browseWorker);
+    if (m_transferWorker) SftpWorker::retire(m_transferThread, m_transferWorker);
 
     delete m_editDir;  // Removes the local copies of edited files
 }
