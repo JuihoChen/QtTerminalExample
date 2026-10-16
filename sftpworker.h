@@ -35,10 +35,10 @@ struct RemoteEntry {
 Q_DECLARE_METATYPE(RemoteEntry)
 Q_DECLARE_METATYPE(QVector<RemoteEntry>)
 
-// Talks SFTP to one server through libssh. Lives in its own QThread; every
-// slot blocks that thread, so call them with queued connections only.
 class QThread;
 
+// Talks SFTP to one server through libssh. Lives in its own QThread; every
+// slot blocks that thread, so call them with queued connections only.
 class SftpWorker : public QObject
 {
     Q_OBJECT
