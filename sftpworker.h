@@ -82,7 +82,9 @@ signals:
     // skipped items and the reasons in error, one per line
     void transferFinished(int jobId, bool success, const QString &error);
     void commandOutput(const QByteArray &data);
-    // error is empty when the command ran; exitStatus is then its exit code
+    void commandErrorOutput(const QByteArray &data);
+    // error is empty when the command ran; exitStatus is then its exit code,
+    // or -1 when the server sent none (the command was killed by a signal)
     void commandFinished(int exitStatus, const QString &error);
 
 private:

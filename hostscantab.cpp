@@ -52,7 +52,7 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
       m_process(nullptr), m_workerThread(nullptr), m_worker(nullptr),
       m_scanning(false), m_stopRequested(false), m_section(Probes),
       m_rangeStart(0), m_rangeEnd(0), m_scanPort(22), m_done(0),
-      m_noPortCheck(false), m_noPing(false)
+      m_noPortCheck(false), m_noPing(false), m_sawEnd(false), m_commandStarted(false)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
 
@@ -297,11 +297,15 @@ QString HostScanTab::formatIPv4(quint32 address)
                                   .arg((address >> 8) & 255).arg(address & 255);
 }
 
-// Prints "UP <ip>" for a ping reply, "OPEN <ip>" when the port accepts a TCP
-// connection and "DONE <ip>" when a host is finished, then the ARP table
-// after "ARP" and the scanning host's own addresses after "SELF". Probing
-// fills the ARP table, so it is read last. Uses bash's /dev/tcp with
-// coreutils timeout for the port check, or nc when those are missing.
+// Prints "UP <ip>" for a ping reply, then the port check's result: "OPEN",
+// "REFUSED" (the host answered, nothing listens), "TIMEOUT" (no answer in
+// time, often a firewall dropping it), "UNREACH" or "CLOSED" (any other
+// failure), each followed by the IP, and "DONE <ip>" when a host is finished.
+// Then the ARP table after "ARP", the scanning host's own addresses after
+// "SELF", and "END". Probing fills the ARP table, so it is read last. Uses
+// bash's /dev/tcp with coreutils timeout for the port check (timeout exits
+// 124 when time runs out), or nc when those are missing. Error messages are
+// matched in English, hence LC_ALL=C.
 QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeoutSeconds)
 {
     QString script = QString(
@@ -313,9 +317,20 @@ QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeou
         "probe() {\n"
         "  ping -c 1 -W \"$T\" \"$1\" >/dev/null 2>&1 && echo \"UP $1\"\n"
         "  if [ -n \"$B\" ]; then\n"
-        "    timeout \"$T\" \"$B\" -c 'exec 3<>\"/dev/tcp/$0/$1\"' \"$1\" \"$P\" >/dev/null 2>&1 && echo \"OPEN $1\"\n"
+        "    r=$(LC_ALL=C timeout \"$T\" \"$B\" -c 'exec 3<>\"/dev/tcp/$0/$1\"' \"$1\" \"$P\" 2>&1 >/dev/null); c=$?\n"
         "  elif [ -n \"$NC\" ]; then\n"
-        "    nc -z -w \"$T\" \"$1\" \"$P\" >/dev/null 2>&1 && echo \"OPEN $1\"\n"
+        "    r=$(LC_ALL=C nc -v -z -w \"$T\" \"$1\" \"$P\" 2>&1 >/dev/null); c=$?\n"
+        "  fi\n"
+        "  if [ -n \"$B$NC\" ]; then\n"
+        "    if [ \"$c\" -eq 0 ]; then s=OPEN\n"
+        "    elif [ \"$c\" -eq 124 ]; then s=TIMEOUT\n"
+        "    else case \"$r\" in\n"
+        "      *efused*) s=REFUSED;;\n"
+        "      *'timed out'*|*'in progress'*) s=TIMEOUT;;\n"
+        "      *'No route'*|*nreachable*) s=UNREACH;;\n"
+        "      *) s=CLOSED;;\n"
+        "    esac; fi\n"
+        "    echo \"$s $1\"\n"
         "  fi\n"
         "  echo \"DONE $1\"\n"
         "}\n"
@@ -333,7 +348,8 @@ QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeou
         "  ip -o -4 addr show 2>/dev/null | while read -r _ dev _ addr _; do\n"
         "    echo \"${addr%/*} $(cat \"/sys/class/net/$dev/address\" 2>/dev/null)\"\n"
         "  done\n"
-        "fi\n")
+        "fi\n"
+        "echo END\n")
         .arg(start).arg(end).arg(port).arg(timeoutSeconds).arg(kParallelProbes);
     return script;
 }
@@ -370,6 +386,10 @@ void HostScanTab::startScan()
     m_done = 0;
     m_noPortCheck = false;
     m_noPing = false;
+    m_sawEnd = false;
+    m_commandStarted = false;
+    m_stderr.clear();
+    m_ports.clear();
     m_stopRequested = false;
     m_progress->setRange(0, int(end - start + 1));
     m_progress->setValue(0);
@@ -378,22 +398,24 @@ void HostScanTab::startScan()
 
     QString script = scanScript(start, end, m_scanPort, m_timeoutSpin->value());
     const SSHConnection *via = scanFromConnection();
+    m_scanFromName = via ? QString("%1 (%2)").arg(via->name, via->host) : QStringLiteral("this computer");
 
     if (!via) {
-        m_statusLabel->setText(QString("Scanning %1 addresses...").arg(end - start + 1));
+        showStatus(QString("Scanning %1 addresses...").arg(end - start + 1));
         m_process = new QProcess(this);
-        m_process->setProcessChannelMode(QProcess::MergedChannels);
-        connect(m_process, &QProcess::readyRead, this, [this]() {
-            handleOutput(m_process->readAll());
+        connect(m_process, &QProcess::readyReadStandardOutput, this, [this]() {
+            handleOutput(m_process->readAllStandardOutput());
+        });
+        connect(m_process, &QProcess::readyReadStandardError, this, [this]() {
+            m_stderr = (m_stderr + m_process->readAllStandardError()).right(4096);
         });
         connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-                [this](int, QProcess::ExitStatus status) {
-            handleOutput(m_process->readAll());
-            QString error;
-            if (status != QProcess::NormalExit && !m_stopRequested) error = "The scan stopped unexpectedly.";
+                [this](int exitCode, QProcess::ExitStatus status) {
+            handleOutput(m_process->readAllStandardOutput());
+            m_stderr = (m_stderr + m_process->readAllStandardError()).right(4096);
             m_process->deleteLater();
             m_process = nullptr;
-            finishScan(error);
+            scriptEnded(exitCode, status != QProcess::NormalExit);
         });
         connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
             if (error != QProcess::FailedToStart || !m_process) return;
@@ -407,23 +429,40 @@ void HostScanTab::startScan()
 
     // Through a saved connection: run the script there over SSH. Wrapped in
     // sh -c so it works whatever the login shell is.
-    m_statusLabel->setText(QString("Connecting to %1...").arg(via->host));
+    showStatus(QString("Connecting to %1...").arg(via->host));
     m_workerThread = new QThread(this);
     m_worker = new SftpWorker(*via);
     m_worker->moveToThread(m_workerThread);
     QString viaHost = via->host;
     connect(m_worker, &SftpWorker::step, this, [this, viaHost](const QString &step) {
         if (step == "Running command") {
-            m_statusLabel->setText(QString("Scanning %1 addresses from %2...")
-                                       .arg(m_rangeEnd - m_rangeStart + 1).arg(viaHost));
+            showStatus(QString("Scanning %1 addresses from %2...")
+                           .arg(m_rangeEnd - m_rangeStart + 1).arg(viaHost));
         } else {
-            m_statusLabel->setText(step + "...");
+            showStatus(step + "...");
         }
     });
     connect(m_worker, &SftpWorker::commandOutput, this, &HostScanTab::handleOutput);
-    connect(m_worker, &SftpWorker::commandFinished, this, [this](int, const QString &error) {
+    connect(m_worker, &SftpWorker::commandErrorOutput, this, [this](const QByteArray &data) {
+        m_stderr = (m_stderr + data).right(4096);
+    });
+    connect(m_worker, &SftpWorker::commandFinished, this, [this](int exitStatus, const QString &error) {
+        bool ran = m_commandStarted;
         stopRemoteWorker();
-        finishScan(m_stopRequested ? QString() : error);
+        if (m_stopRequested) {
+            finishScan(QString());
+        } else if (!error.isEmpty() && !ran) {
+            // Never got as far as running the script: the login failed
+            finishScan(QString("Could not scan from %1. Logging in to it failed:\n%2")
+                           .arg(m_scanFromName, error));
+        } else if (!error.isEmpty()) {
+            finishScan(QString("The scan on %1 was cut off: %2").arg(m_scanFromName, error));
+        } else {
+            scriptEnded(exitStatus, exitStatus < 0);
+        }
+    });
+    connect(m_worker, &SftpWorker::step, this, [this](const QString &step) {
+        if (step == "Running command") m_commandStarted = true;
     });
     m_workerThread->start();
     QMetaObject::invokeMethod(m_worker, "runCommand", Qt::QueuedConnection,
@@ -434,7 +473,7 @@ void HostScanTab::stopScan()
 {
     if (!m_scanning) return;
     m_stopRequested = true;
-    m_statusLabel->setText("Stopping...");
+    showStatus("Stopping...");
     if (m_process) m_process->kill();
     if (m_worker) m_worker->abortConnection();
 }
@@ -466,6 +505,7 @@ void HostScanTab::handleLine(const QString &line)
 {
     if (line == "ARP") { m_section = Arp; return; }
     if (line == "SELF") { m_section = Self; return; }
+    if (line == "END") { m_sawEnd = true; return; }
 
     QStringList fields = line.simplified().split(' ');
     quint32 address = 0;
@@ -474,11 +514,22 @@ void HostScanTab::handleLine(const QString &line)
     case Probes:
         if (line == "NOPORTCHECK") { m_noPortCheck = true; return; }
         if (line == "NOPING") { m_noPing = true; return; }
-        if (fields.size() != 2 || !parseIPv4(fields[1], &address)) return;
+        if (fields.size() != 2 || !parseIPv4(fields[1], &address)) {
+            // Not from the script (a login message, say); kept for error reports
+            m_stderr = (m_stderr + line.toUtf8() + '\n').right(4096);
+            return;
+        }
         if (fields[0] == "UP") {
             rowFor(address);
-        } else if (fields[0] == "OPEN") {
-            setRowSsh(rowFor(address), true);
+        } else if (fields[0] == "OPEN" || fields[0] == "REFUSED") {
+            // A refusal comes from the host itself, so it is up
+            m_ports.insert(address, fields[0] == "OPEN" ? Open : Refused);
+            setRowSsh(rowFor(address), m_ports.value(address));
+        } else if (fields[0] == "TIMEOUT" || fields[0] == "UNREACH" || fields[0] == "CLOSED") {
+            PortState state = fields[0] == "TIMEOUT" ? TimedOut
+                            : fields[0] == "UNREACH" ? Unreachable : Closed;
+            m_ports.insert(address, state);
+            if (QTreeWidgetItem *row = m_rows.value(address)) setRowSsh(row, state);
         } else if (fields[0] == "DONE") {
             m_progress->setValue(++m_done);
         }
@@ -510,22 +561,87 @@ QTreeWidgetItem *HostScanTab::rowFor(quint32 address)
     row->setText(IpColumn, formatIPv4(address));
     row->setData(IpColumn, Qt::UserRole, address);
     row->setCheckState(IpColumn, Qt::Unchecked);
-    setRowSsh(row, false);
     m_rows.insert(address, row);
+    setRowSsh(row, m_ports.value(address, NotChecked));
     return row;
 }
 
-void HostScanTab::setRowSsh(QTreeWidgetItem *row, bool open)
+void HostScanTab::setRowSsh(QTreeWidgetItem *row, PortState state)
 {
     QSignalBlocker blocker(m_results);
-    if (m_noPortCheck) {
-        row->setText(SshColumn, "Unknown");
-    } else {
-        row->setText(SshColumn, open ? "Yes" : "No");
-        row->setForeground(SshColumn, open ? QColor("#008000") : QColor("#888888"));
+    QString text, tip;
+    QColor color("#888888");
+    switch (state) {
+    case Open:
+        text = "Yes";
+        color = QColor("#008000");
+        tip = QString("Port %1 accepted a connection.").arg(m_scanPort);
+        break;
+    case Refused:
+        text = "No (refused)";
+        tip = QString("The host answered, but nothing is listening on port %1.").arg(m_scanPort);
+        break;
+    case TimedOut:
+        text = "No (timed out)";
+        color = QColor("#b36b00");
+        tip = QString("No answer on port %1 within the timeout. A firewall may be dropping "
+                      "the connection, or the host is slow; try a longer timeout.").arg(m_scanPort);
+        break;
+    case Unreachable:
+        text = "No (unreachable)";
+        tip = "The network reported the host as unreachable.";
+        break;
+    case Closed:
+        text = "No";
+        tip = QString("Could not connect to port %1.").arg(m_scanPort);
+        break;
+    case NotChecked:
+        text = m_noPortCheck ? QStringLiteral("Unknown") : m_scanning ? QStringLiteral("...")
+                                                                      : QStringLiteral("Not checked");
+        tip = m_noPortCheck ? QStringLiteral("The scanning host has neither bash with timeout nor nc.")
+                            : QString();
+        break;
     }
-    if (open) row->setCheckState(IpColumn, Qt::Checked);
-    row->setData(SshColumn, Qt::UserRole, open);
+    row->setText(SshColumn, text);
+    row->setToolTip(SshColumn, tip);
+    row->setForeground(SshColumn, color);
+    if (state == Open) row->setCheckState(IpColumn, Qt::Checked);
+    row->setData(SshColumn, Qt::UserRole, state == Open);
+}
+
+void HostScanTab::showStatus(const QString &text, bool isError)
+{
+    m_statusLabel->setText(text);
+    m_statusLabel->setStyleSheet(isError ? "QLabel { color: #c00000; font-weight: bold; }" : QString());
+}
+
+// The last few lines the script wrote to stderr, for error messages
+QString HostScanTab::stderrTail() const
+{
+    QStringList lines = QString::fromUtf8(m_stderr).trimmed().split('\n');
+    while (lines.size() > 5) lines.removeFirst();
+    return lines.join('\n').trimmed();
+}
+
+// The script ran; reports it when it failed or stopped before the end
+void HostScanTab::scriptEnded(int exitCode, bool crashed)
+{
+    if (m_stopRequested || (m_sawEnd && exitCode == 0 && !crashed)) {
+        finishScan(QString());
+        return;
+    }
+    QString message;
+    if (crashed) {
+        message = QString("The scan on %1 was killed before it finished.").arg(m_scanFromName);
+    } else if (exitCode != 0) {
+        message = QString("The scan on %1 failed (exit status %2).").arg(m_scanFromName).arg(exitCode);
+    } else {
+        message = QString("The scan on %1 ended before it finished.").arg(m_scanFromName);
+    }
+    QString details = stderrTail();
+    if (!details.isEmpty()) message += "\n" + details;
+    if (!m_rows.isEmpty()) message += "\nThe hosts found before that are listed.";
+    finishScan(message);
 }
 
 void HostScanTab::finishScan(const QString &error)
@@ -553,18 +669,24 @@ void HostScanTab::finishScan(const QString &error)
     m_results->sortByColumn(m_results->sortColumn(), m_results->header()->sortIndicatorOrder());
     setScanning(false);
 
-    int open = 0;
-    for (QTreeWidgetItem *row : m_rows) {
-        if (row->data(SshColumn, Qt::UserRole).toBool()) ++open;
+    int open = 0, refused = 0, timedOut = 0;
+    for (auto it = m_rows.constBegin(); it != m_rows.constEnd(); ++it) {
+        PortState state = m_ports.value(it.key(), NotChecked);
+        if (state == Open) ++open;
+        else if (state == Refused) ++refused;
+        else if (state == TimedOut) ++timedOut;
+        setRowSsh(it.value(), state);  // Settles rows still showing "..."
     }
-    QString summary = QString("Found %1 host(s), %2 with port %3 open.")
-                          .arg(m_rows.size()).arg(open).arg(m_scanPort);
+    QString summary = QString("Found %1 host(s): port %2 open on %3").arg(m_rows.size()).arg(m_scanPort).arg(open);
+    if (refused) summary += QString(", refused on %1").arg(refused);
+    if (timedOut) summary += QString(", timed out on %1").arg(timedOut);
+    summary += ".";
     if (m_stopRequested) summary = "Stopped. " + summary;
     if (m_noPortCheck) summary += " The scanning host has neither bash with timeout nor nc, so the port was not checked.";
     if (m_noPing) summary += " The scanning host has no ping command.";
     if (!error.isEmpty()) summary = error;
-    m_statusLabel->setText(summary);
-    if (!m_stopRequested) m_progress->setValue(m_progress->maximum());
+    showStatus(summary, !error.isEmpty());
+    if (!m_stopRequested && error.isEmpty()) m_progress->setValue(m_progress->maximum());
     updateImportButton();
 }
 
@@ -623,6 +745,6 @@ void HostScanTab::importChecked()
     if (!folder.isEmpty()) message += " into " + folder;
     message += ".";
     if (skipped) message += QString(" Skipped %1 already saved.").arg(skipped);
-    m_statusLabel->setText(message);
+    showStatus(message);
     updateImportButton();
 }
