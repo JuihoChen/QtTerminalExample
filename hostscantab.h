@@ -65,9 +65,15 @@ private:
     void setDefaultRange();
     void handleOutput(const QByteArray &data);
     void handleLine(const QString &line);
+    // What the port check found for one host
+    enum PortState { NotChecked, Open, Refused, TimedOut, Unreachable, Closed };
+
     void finishScan(const QString &error);
+    void scriptEnded(int exitCode, bool crashed);
+    QString stderrTail() const;
     QTreeWidgetItem *rowFor(quint32 address);
-    void setRowSsh(QTreeWidgetItem *row, bool open);
+    void setRowSsh(QTreeWidgetItem *row, PortState state);
+    void showStatus(const QString &text, bool isError = false);
     void setScanning(bool scanning);
     void stopRemoteWorker();
     const SSHConnection *scanFromConnection() const;
@@ -104,8 +110,13 @@ private:
     int m_scanPort;
     int m_done;
     bool m_noPortCheck;
+    bool m_sawEnd;            // The script printed END: it ran to the end
+    bool m_commandStarted;    // A remote scan logged in and started the script
+    QString m_scanFromName;   // "this computer" or the connection, for messages
+    QByteArray m_stderr;      // Last part of the script's error output
     bool m_noPing;
     QHash<quint32, QTreeWidgetItem *> m_rows;
+    QHash<quint32, PortState> m_ports;
     QHash<quint32, QString> m_macs;   // From the ARP table and the scanning host's own addresses
 };
 

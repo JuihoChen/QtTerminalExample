@@ -200,22 +200,32 @@ void SftpWorker::runCommand(const QString &command)
     }
 
     char buffer[4096];
+    char errBuffer[4096];
     while (true) {
         // Short reads so abortConnection() is noticed quickly
         int n = ssh_channel_read_timeout(channel, buffer, sizeof(buffer), 0, 500);
         if (n > 0) {
             emit commandOutput(QByteArray(buffer, n));
-        } else if (n == SSH_ERROR || wasAborted()) {
-            error = wasAborted() ? QStringLiteral("Cancelled")
-                                 : QString("Lost the connection: %1").arg(ssh_get_error(m_session));
-            break;
-        } else if (ssh_channel_is_eof(channel)) {
+        }
+        int errBytes = ssh_channel_read_nonblocking(channel, errBuffer, sizeof(errBuffer), 1);
+        if (errBytes > 0) emit commandErrorOutput(QByteArray(errBuffer, errBytes));
+        if (wasAborted()) {
+            error = QStringLiteral("Cancelled");
             break;
         }
+        if (n == SSH_ERROR || errBytes == SSH_ERROR) {
+            error = QString("Lost the connection: %1").arg(ssh_get_error(m_session));
+            break;
+        }
+        if (n <= 0 && errBytes <= 0 && ssh_channel_is_eof(channel)) break;
     }
 
     int status = -1;
     if (error.isEmpty()) {
+        int errBytes;
+        while ((errBytes = ssh_channel_read_nonblocking(channel, errBuffer, sizeof(errBuffer), 1)) > 0) {
+            emit commandErrorOutput(QByteArray(errBuffer, errBytes));
+        }
         ssh_channel_send_eof(channel);
         status = ssh_channel_get_exit_status(channel);
     }
