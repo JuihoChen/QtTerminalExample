@@ -481,12 +481,8 @@ void HostScanTab::stopScan()
 void HostScanTab::stopRemoteWorker()
 {
     if (!m_worker) return;
-    m_worker->abortConnection();
-    m_workerThread->quit();
-    m_workerThread->wait();
-    delete m_worker;
+    SftpWorker::retire(m_workerThread, m_worker);
     m_worker = nullptr;
-    m_workerThread->deleteLater();
     m_workerThread = nullptr;
 }
 
