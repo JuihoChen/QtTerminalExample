@@ -284,7 +284,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Format** - JSON with connection details, passwords, and organization
 - **Backup Strategy** - Regularly backup your connections file
 - **Missing File** - The application creates a few sample connections if the file doesn't exist
-- **Damaged File** - ⚠️ If the file can't be read as JSON (for example after a hand edit with a typo), it is kept as `connections.json.damaged-<date-time>` next to it, a warning says why it couldn't be read, and the connection list starts empty. Fix the file and copy it back while the program is closed to get your connections back. Saves go through a temporary file, so a crash mid-save can't leave a cut-off file
+- **Damaged File** - ⚠️ If the file can't be read as JSON (for example after a hand edit with a typo), it is kept as `connections.json.damaged-<date-time>` next to it, a warning says why it couldn't be read, and the sample connections are shown instead. Fix the file and copy it back while the program is closed to get your connections back. Saves go through a temporary file, so a crash mid-save can't leave a cut-off file
 
 ### Security Configuration
 Secure your connection data:

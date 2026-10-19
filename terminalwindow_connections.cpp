@@ -106,32 +106,34 @@ void TerminalWindow::loadConnections()
 }
 
 // Keeps a connections file that can't be read instead of saving over it:
-// it is renamed to connections.json.damaged-<time> and the list starts empty.
-// If even the rename fails, saving stays off so the file is never replaced.
+// it is renamed to connections.json.damaged-<time> and the sample connections
+// are shown instead. If even the rename fails, saving stays off so the file is
+// never replaced.
 void TerminalWindow::setAsideDamagedConnectionsFile(const QString &reason)
 {
     QString filePath = getConnectionsFilePath();
     QString backupPath = filePath + ".damaged-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
 
-    connections.clear();
-    refreshConnectionTree();
-    updateStatusBar();
-
     QString message;
     if (QFile::rename(filePath, backupPath)) {
         connectionsSaveBlocked = false;
         message = QString("Your saved connections file could not be read, so it was kept as:\n%1\n\n%2\n\n"
-                          "The connection list starts empty. Fix the file and copy it back to\n%3\n"
+                          "The sample connections are shown instead. Fix the file and copy it back to\n%3\n"
                           "while the program is closed to get your connections back.")
                       .arg(backupPath, reason, filePath);
     } else {
         connectionsSaveBlocked = true;
         message = QString("Your saved connections file could not be read:\n%1\n\n%2\n\n"
-                          "It could not be moved aside either, so connections won't be saved this session "
-                          "to avoid replacing it. Fix or move the file, then use Connections > Refresh.")
+                          "It could not be moved aside either, so the sample connections are shown and "
+                          "nothing is saved this session, to avoid replacing it. Fix or move the file, "
+                          "then use Connections > Refresh.")
                       .arg(filePath, reason);
     }
     qDebug() << "Damaged connections file:" << reason;
+
+    // Saves the samples only when the damaged file is out of the way
+    createDefaultConnections();
+    updateStatusBar();
 
     // Show it once the window is up; this can run from the constructor
     QTimer::singleShot(0, this, [this, message]() {
