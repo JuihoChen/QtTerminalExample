@@ -110,6 +110,7 @@ private:
     void refreshConnectionTree();
     void createDefaultConnections();  // Creates initial connections if file doesn't exist
     QString getConnectionsFilePath() const;
+    void setAsideDamagedConnectionsFile(const QString &reason);
 
     // Feature 3: Helper methods
     QStringList getExistingFolders() const;
@@ -164,6 +165,7 @@ private:
 
     // Store connections
     QList<SSHConnection> connections;
+    bool connectionsSaveBlocked = false;  // Set when a damaged connections file couldn't be moved aside
 
     // Current selected connection for config panel
     SSHConnection selectedConnection;
