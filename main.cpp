@@ -1,6 +1,7 @@
 // ============ Updated main.cpp with Feature 4 ============
 #include <QApplication>
 #include "terminalwindow.h"
+#include "sftpworker.h"
 
 int main(int argc, char *argv[])
 {
@@ -34,8 +35,14 @@ int main(int argc, char *argv[])
     QTermWidget::addCustomColorSchemeDir("/usr/share/qtermwidget5/color-schemes");
 
 
-    TerminalWindow window;
-    window.show();
+    int result;
+    {
+        TerminalWindow window;
+        window.show();
+        result = app.exec();
+    }
 
-    return app.exec();
+    // Let file browser connections that are still closing finish cleanly
+    SftpWorker::waitForRetired(3000);
+    return result;
 }

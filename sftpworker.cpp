@@ -6,13 +6,16 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMutexLocker>
+#include <QPointer>
 #include <QQueue>
+#include <QThread>
 
 #include <libssh/libssh.h>
 #include <libssh/callbacks.h>
 #include <libssh/sftp.h>
 
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -136,6 +139,43 @@ void SftpWorker::cancelAll()
 {
     QMutexLocker lock(&m_cancelMutex);
     m_cancelAll = true;
+}
+
+namespace {
+
+// Threads of retired workers, kept so the app can let them finish at exit
+QList<QPointer<QThread>> &retiredThreads()
+{
+    static QList<QPointer<QThread>> threads;
+    return threads;
+}
+
+} // namespace
+
+void SftpWorker::retire(QThread *thread, SftpWorker *worker)
+{
+    worker->cancelAll();
+    worker->abortConnection();
+    // Nothing the worker still reports is wanted, and its owner may be going away
+    worker->disconnect();
+    thread->setParent(nullptr);
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->quit();
+
+    QList<QPointer<QThread>> &threads = retiredThreads();
+    threads.removeAll(QPointer<QThread>());
+    threads.append(thread);
+}
+
+void SftpWorker::waitForRetired(int msecs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    for (const QPointer<QThread> &thread : retiredThreads()) {
+        if (thread) thread->wait(qMax<qint64>(0, msecs - timer.elapsed()));
+    }
+    retiredThreads().clear();
 }
 
 bool SftpWorker::wasAborted()
@@ -298,23 +338,68 @@ bool SftpWorker::ensureSession(QString *error)
 
     emit step(QString("Connecting to %1:%2").arg(m_connection.host).arg(m_connection.port));
     QMutexLocker parseLock(&g_configParseMutex);
-    if (ssh_connect(m_session) != SSH_OK) {
+    // Read ~/.ssh/config now, under the lock, so ssh_connect() doesn't, and
+    // other panes needn't wait while this one waits on a slow server
+    int parsed = ssh_options_parse_config(m_session, nullptr);
+    parseLock.unlock();
+    QString connectError;
+    if (parsed != 0) connectError = ssh_get_error(m_session);
+    if (parsed != 0 || !connectSession(&connectError)) {
         *error = QString("Could not connect to %1:%2\n%3")
-                     .arg(m_connection.host).arg(m_connection.port)
-                     .arg(ssh_get_error(m_session));
+                     .arg(m_connection.host).arg(m_connection.port).arg(connectError);
         disconnectFromServer();
         return false;
     }
-    {
-        QMutexLocker lock(&m_socketMutex);
-        m_socket = ssh_get_fd(m_session);
-    }
 
     emit step("Checking the host key");
+    parseLock.relock();
     bool hostKeyOk = verifyHostKey(error);
     parseLock.unlock();
     if (!hostKeyOk || !authenticate(error)) {
         disconnectFromServer();
+        return false;
+    }
+    return true;
+}
+
+// Opens the connection in libssh's non-blocking mode, checking every 50 ms
+// whether abortConnection() was called. In blocking mode ssh_connect() can't
+// be interrupted, so closing a tab whose server doesn't answer would have to
+// wait out the whole timeout.
+bool SftpWorker::connectSession(QString *error)
+{
+    QElapsedTimer timer;
+    timer.start();
+    ssh_set_blocking(m_session, 0);
+    int rc;
+    while ((rc = ssh_connect(m_session)) == SSH_AGAIN) {
+        if (wasAborted()) {
+            *error = "Cancelled.";
+            return false;
+        }
+        if (timer.elapsed() >= kConnectTimeoutSeconds * 1000) {
+            *error = QString("Timeout connecting to %1").arg(m_connection.host);
+            return false;
+        }
+        socket_t fd = ssh_get_fd(m_session);
+        if (fd == SSH_INVALID_SOCKET) {
+            QThread::msleep(50);
+        } else {
+            pollfd waitFor = { fd, POLLIN, 0 };
+            ::poll(&waitFor, 1, 50);
+        }
+    }
+    if (rc != SSH_OK) {
+        *error = ssh_get_error(m_session);
+        return false;
+    }
+    ssh_set_blocking(m_session, 1);
+
+    QMutexLocker lock(&m_socketMutex);
+    m_socket = ssh_get_fd(m_session);
+    // An abort that came just before the socket was known would be lost
+    if (m_aborted) {
+        *error = "Cancelled.";
         return false;
     }
     return true;
