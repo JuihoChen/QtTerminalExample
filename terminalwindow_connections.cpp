@@ -9,6 +9,9 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
+#include <QSaveFile>
+#include <QDateTime>
+#include <QTimer>
 #include <QDir>
 #include <QStandardPaths>
 #include <QDebug>
@@ -54,13 +57,13 @@ void TerminalWindow::loadConnections()
     
     if (!file.exists()) {
         qDebug() << "Connections file doesn't exist, creating default connections";
+        connectionsSaveBlocked = false;  // Nothing left to protect
         createDefaultConnections();
         return;
     }
     
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "Failed to open connections file for reading";
-        createDefaultConnections();
+        setAsideDamagedConnectionsFile("It could not be opened: " + file.errorString());
         return;
     }
     
@@ -70,12 +73,14 @@ void TerminalWindow::loadConnections()
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);
     
-    if (error.error != QJsonParseError::NoError) {
-        qDebug() << "JSON parse error:" << error.errorString();
-        createDefaultConnections();
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        setAsideDamagedConnectionsFile(error.error != QJsonParseError::NoError
+            ? QString("It is not valid JSON: %1 (at character %2).").arg(error.errorString()).arg(error.offset)
+            : QString("It does not contain a JSON object."));
         return;
     }
     
+    connectionsSaveBlocked = false;
     connections.clear();
     QJsonObject root = doc.object();
     QJsonArray connectionsArray = root["connections"].toArray();
@@ -100,10 +105,51 @@ void TerminalWindow::loadConnections()
     updateStatusBar();
 }
 
-void TerminalWindow::saveConnections()
+// Keeps a connections file that can't be read instead of saving over it:
+// it is renamed to connections.json.damaged-<time> and the list starts empty.
+// If even the rename fails, saving stays off so the file is never replaced.
+void TerminalWindow::setAsideDamagedConnectionsFile(const QString &reason)
 {
     QString filePath = getConnectionsFilePath();
-    QFile file(filePath);
+    QString backupPath = filePath + ".damaged-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+
+    connections.clear();
+    refreshConnectionTree();
+    updateStatusBar();
+
+    QString message;
+    if (QFile::rename(filePath, backupPath)) {
+        connectionsSaveBlocked = false;
+        message = QString("Your saved connections file could not be read, so it was kept as:\n%1\n\n%2\n\n"
+                          "The connection list starts empty. Fix the file and copy it back to\n%3\n"
+                          "while the program is closed to get your connections back.")
+                      .arg(backupPath, reason, filePath);
+    } else {
+        connectionsSaveBlocked = true;
+        message = QString("Your saved connections file could not be read:\n%1\n\n%2\n\n"
+                          "It could not be moved aside either, so connections won't be saved this session "
+                          "to avoid replacing it. Fix or move the file, then use Connections > Refresh.")
+                      .arg(filePath, reason);
+    }
+    qDebug() << "Damaged connections file:" << reason;
+
+    // Show it once the window is up; this can run from the constructor
+    QTimer::singleShot(0, this, [this, message]() {
+        QMessageBox::warning(this, "Connections File Damaged", message);
+    });
+}
+
+void TerminalWindow::saveConnections()
+{
+    if (connectionsSaveBlocked) {
+        qDebug() << "Not saving connections: the damaged connections file is still in place";
+        return;
+    }
+
+    QString filePath = getConnectionsFilePath();
+    // QSaveFile writes a temporary file and renames it over the old one, so a
+    // crash or full disk mid-save can't leave a cut-off connections file
+    QSaveFile file(filePath);
     
     if (!file.open(QIODevice::WriteOnly)) {
         qDebug() << "Failed to open connections file for writing";
@@ -132,7 +178,10 @@ void TerminalWindow::saveConnections()
     
     QJsonDocument doc(root);
     file.write(doc.toJson());
-    file.close();
+    if (!file.commit()) {
+        qDebug() << "Failed to save connections:" << file.errorString();
+        return;
+    }
     
     qDebug() << "Saved" << connections.size() << "connections";
 }

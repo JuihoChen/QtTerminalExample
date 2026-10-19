@@ -284,7 +284,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Format** - JSON with connection details, passwords, and organization
 - **Backup Strategy** - Regularly backup your connections file
 - **Missing File** - The application creates a few sample connections if the file doesn't exist
-- **Damaged File** - ⚠️ If the file can't be read as JSON (for example after a hand edit with a typo), it is currently replaced by the sample connections and your saved connections are lost. Back it up before editing it by hand
+- **Damaged File** - ⚠️ If the file can't be read as JSON (for example after a hand edit with a typo), it is kept as `connections.json.damaged-<date-time>` next to it, a warning says why it couldn't be read, and the connection list starts empty. Fix the file and copy it back while the program is closed to get your connections back. Saves go through a temporary file, so a crash mid-save can't leave a cut-off file
 
 ### Security Configuration
 Secure your connection data:
@@ -427,7 +427,6 @@ chmod 700 ~/.config/QtTerminalExample/
 ## Known Issues
 
 - **`Ctrl+N` is bound to both New Tab and New Connection**, so the shortcut may do nothing. Use File → New Tab and Connections → New Connection... (or the tab bar and tree right-click menus) instead.
-- **A damaged `connections.json` is overwritten** with the sample connections on start-up. Keep a backup if you edit the file by hand.
 
 ## Development
 
