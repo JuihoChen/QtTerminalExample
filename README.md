@@ -20,7 +20,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **📤 File Upload** - SCP upload from the SSH tab menu
 - **🏠 Local Terminal Start Folder** - Local terminals open in your home folder, or a folder you pick with File → Start Folder...
 - **💾 Persistent JSON Storage** - Automatic save/load of connections and settings
-- **🔍 Connection Testing** - Ping-based connectivity testing before connecting
+- **🔍 Connection Testing** - Ping a host from the connection dialog with **Test Connection**
 - **⌨️ Rich Keyboard Shortcuts** - Standard terminal shortcuts plus connection management
 - **🔤 Font Management** - Customizable fonts with zoom controls (Ctrl++ / Ctrl+-)
 - **🎨 Multiple Color Schemes** - Various terminal color themes
@@ -133,7 +133,9 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 - **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder), **Edit** and **Copy Path**. Double-clicking a remote file also downloads it.
 - **Transfers (bottom)** - Each download (↓) and upload (↑) with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders transfer with everything inside them. Items that can't be copied (unreadable files, pipes and other special files) are skipped and the rest still comes across; the row then says **N skipped** in amber, and hovering over it or double-clicking it lists each item and why. In a downloaded folder, symlinks are recreated as symlinks with the same target, like `cp -a`; in an uploaded folder, links to folders are skipped.
 
-Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused.
+Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused. Settings in `~/.ssh/config` (such as `Host` aliases, `User`, `Port` and `IdentityFile`) apply to the browser too.
+
+If the server stops answering for 30 seconds, the browser gives up and says which step it was waiting on; when the login works but SFTP never starts, it explains the usual cause (a login script on the server, such as `~/.bashrc`, that waits for input or runs a long command). Closing a tab whose server doesn't answer doesn't freeze the window.
 
 The file browser uses [libssh](https://www.libssh.org/) for SFTP.
 
@@ -161,7 +163,7 @@ qtermwidget is bundled in the `qtermwidget/` folder and built together with the 
 
 ### Runtime Dependencies  
 - **OpenSSH client** - For SSH connections (`openssh-client` package)
-- **libssh 0.9+** - For the file browser (`libssh-dev` to build, `libssh-4` at runtime)
+- **libssh 0.9+** - For the file browser and host scan (`libssh-4`; `libssh-dev` is only needed to build)
 - **sshpass** - For automatic password authentication (optional but recommended)
 - **ping utility** - For connection testing (usually pre-installed)
 
@@ -238,14 +240,15 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 ## Usage Guide
 
 ### Terminal Operations
-- **New Tab** - `Ctrl+T` or File → New Tab or right-click tab bar
+- **New Tab** - File → New Tab or right-click tab bar (see [Known Issues](#known-issues) about its shortcut)
 - **Start Folder** - File → Start Folder... picks the folder new local terminals open in (default: your home folder; falls back to home if the folder is gone)
 - **Close Tab** - `Ctrl+W` or click × on tab or right-click → Close Tab
 - **Switch Tabs** - `Ctrl+PageUp/PageDown` or click tab headers
 - **Copy** - `Ctrl+C` in terminal or right-click → Copy
+- **Interrupt** - `Ctrl+Z` sends the interrupt signal (what `Ctrl+C` does in other terminals), because `Ctrl+C` copies. Suspending a program with `Ctrl+Z` isn't available
 - **Paste** - `Ctrl+V` in terminal or right-click → Paste
-- **Select All** - `Ctrl+A` or right-click → Select All
-- **Clear Terminal** - Right-click → Clear or `Ctrl+L`
+- **Select All** - `Ctrl+A` or right-click → Select All (so `Ctrl+A` doesn't move to the start of the line)
+- **Clear Terminal** - Right-click → Clear wipes the screen and the scrollback; `Ctrl+L` asks the shell to clear the screen and keeps the scrollback
 
 ### Font and Display
 - **Increase Font** - `Ctrl++` or View → Zoom In
@@ -260,7 +263,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **Double-Click Connect** - Double-click any connection for instant SSH
 - **Edit Connection** - Select connection → click "✏️ Edit" or right-click → Edit
 - **Delete Connection** - Select connection → click "🗑️ Delete" or right-click → Delete
-- **Test Connectivity** - Use "Test Connection" button in connection dialog
+- **Test Connectivity** - Use "Test Connection" button in connection dialog (pings the host)
 - **Add to Folder** - Right-click folder → "Add Connection to [Folder]"
 - **Folder Kept** - New Connection starts in the folder selected in the tree, and Edit Connection keeps the connection's current folder
 
@@ -280,7 +283,8 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - **File Location** - `~/.config/QtTerminalExample/connections.json`
 - **Format** - JSON with connection details, passwords, and organization
 - **Backup Strategy** - Regularly backup your connections file
-- **Auto-Recovery** - Application creates defaults if file is missing or corrupted
+- **Missing File** - The application creates a few sample connections if the file doesn't exist
+- **Damaged File** - ⚠️ If the file can't be read as JSON (for example after a hand edit with a typo), it is currently replaced by the sample connections and your saved connections are lost. Back it up before editing it by hand
 
 ### Security Configuration
 Secure your connection data:
@@ -315,21 +319,17 @@ All SSH connections use optimized settings:
 - **Desktop Launch Ready** - Sets a default `TERM` when started from a desktop shortcut
 - **Display Platform** - Runs on X11 (`xcb`) by default; set `QT_QPA_PLATFORM` (for example `QT_QPA_PLATFORM=wayland ./QtTerminalExample`) to use another
 - **Smart Font Scaling** - Synchronized font changes across all terminals
-- **Session Persistence** - Terminal state maintained during SSH reconnections
-- **Tab Management** - Intelligent tab titling and close behavior
 
 ### Error Handling & Recovery
-- **Connection Validation** - Pre-connection testing and validation
-- **Friendly Error Messages** - User-friendly error descriptions with suggested fixes
-- **Automatic Retries** - Built-in retry logic for temporary failures
-- **Fallback Options** - Graceful degradation when optional tools unavailable
+- **Connection Validation** - Host, port and key file are checked in the connection dialog
+- **Friendly Error Messages** - File browser and host scan errors say what failed and suggest a fix
 
 ## Keyboard Shortcuts Reference
 
 | Action | Shortcut | Context |
 |--------|----------|---------|
 | **File Operations** |  |  |
-| New Tab | `Ctrl+T` | Global |
+| New Tab | File → New Tab | Global (see [Known Issues](#known-issues)) |
 | Close Tab | `Ctrl+W` | Global |
 | Quit Application | `Ctrl+Q` | Global |
 | **Connection Management** |  |  |
@@ -339,6 +339,8 @@ All SSH connections use optimized settings:
 | Copy | `Ctrl+C` | In Terminal |
 | Paste | `Ctrl+V` | In Terminal |
 | Select All | `Ctrl+A` | In Terminal |
+| Interrupt (like `Ctrl+C` elsewhere) | `Ctrl+Z` | In Terminal |
+| Clear screen (shell) | `Ctrl+L` | In Terminal |
 | **View Controls** |  |  |
 | Zoom In | `Ctrl++` | Global |
 | Zoom Out | `Ctrl+-` | Global |
@@ -380,14 +382,13 @@ The `build/color-schemes/` folder next to the program is missing. Run `make` aga
 
 ### Runtime Issues
 
-**"sshpass command not found" warning**
-```bash
-# Install sshpass for automatic password authentication
-sudo apt install sshpass
+**SSH tab shows `sshpass: command not found` with a saved password**
 
-# Without sshpass, manual password entry is required
-# The application will show a warning but continue to function
+A connection with a saved password is started through `sshpass`, and the app doesn't check that it's installed. Install it:
+```bash
+sudo apt install sshpass
 ```
+Or clear the saved password and type it when ssh asks. The file browser doesn't need sshpass.
 
 **"Connection hangs on first SSH attempt"**
 - This occurs when SSH encounters an unknown host key
@@ -418,10 +419,15 @@ chmod 700 ~/.config/QtTerminalExample/
 - Ensure SSH service is running on server: `sudo systemctl status ssh`
 
 **"File transfer fails"**
-- Verify SCP access on server (usually enabled with SSH)
-- Check file permissions on remote server
-- Ensure sufficient disk space for transfers
-- Try manual SCP to test: `scp file user@host:/path/`
+- The file browser uses SFTP; check that the server has it enabled (`Subsystem sftp` in `sshd_config`). Test with `sftp user@host`
+- **Upload File to Server** in the tab menu uses `scp`; test with `scp file user@host:/path/`
+- Check file permissions on the remote server and free disk space on both sides
+- Right-click a failed row in Transfers → copy the error for the exact reason
+
+## Known Issues
+
+- **`Ctrl+N` is bound to both New Tab and New Connection**, so the shortcut may do nothing. Use File → New Tab and Connections → New Connection... (or the tab bar and tree right-click menus) instead.
+- **A damaged `connections.json` is overwritten** with the sample connections on start-up. Keep a backup if you edit the file by hand.
 
 ## Development
 
@@ -509,23 +515,8 @@ QtTerminalExample/
 ## Security Best Practices
 
 ### Password Security
-1. **File Permissions** - Secure your configuration directory:
-   ```bash
-   chmod 700 ~/.config/QtTerminalExample
-   chmod 600 ~/.config/QtTerminalExample/connections.json
-   ```
-
-2. **SSH Keys Preferred** - For production environments:
-   ```bash
-   ssh-keygen -t ed25519
-   ssh-copy-id user@hostname
-   ```
-
-3. **Regular Backups** - Backup connections with proper security:
-   ```bash
-   cp ~/.config/QtTerminalExample/connections.json ~/secure-backup/
-   chmod 600 ~/secure-backup/connections.json
-   ```
+1. **File Permissions** - Lock down the config folder and keep backups private (see [Security Configuration](#security-configuration))
+2. **SSH Keys Preferred** - For production environments (see [SSH Key Authentication](#ssh-key-authentication))
 
 ### Network Security
 - **VPN Usage** - Use VPN for connections over untrusted networks
@@ -553,6 +544,7 @@ QtTerminalExample/
 | File Browser (SFTP) | ✅ Complete | WinSCP-style dock: drag-and-drop downloads/uploads, folders, transfer list |
 | View/Edit Remote Files | ✅ Complete | `F3` read-only view; `F4` edit, uploaded back on every save |
 | SCP Upload | ✅ Complete | Upload a file from the SSH tab menu |
+| SSH Host Scan | ✅ Complete | Find SSH hosts (IP, MAC) directly or through a saved connection, and import them |
 | Error Handling | ✅ Complete | Comprehensive error messages and recovery |
 | **Advanced Features** |  |  |
 | SSH Key Support | ✅ Complete | Per-connection key file (`ssh -i`) and SSH agent integration |
