@@ -23,6 +23,10 @@ void TerminalWindow::setupFileBrowserDock()
     fileBrowserPlaceholder = new FileBrowserPane(fileBrowserStack);
     fileBrowserPlaceholder->setMessage(kPlaceholderText);
     fileBrowserStack->addWidget(fileBrowserPlaceholder);
+    fileBrowserBlank = new QWidget(fileBrowserStack);
+    fileBrowserStack->addWidget(fileBrowserBlank);
+    fileBrowserBlankTitle = new QWidget(fileBrowserDock);
+    fileBrowserBlankTitle->hide();
 
     fileBrowserDock->setWidget(fileBrowserStack);
     addDockWidget(Qt::RightDockWidgetArea, fileBrowserDock);
@@ -50,20 +54,23 @@ void TerminalWindow::showFileBrowser()
 // Shows the pane belonging to the current tab, creating it on first use
 void TerminalWindow::updateFileBrowser()
 {
+    // The scan tab has no files: the panel shows nothing there, not even its
+    // title, but keeps its width so the layout doesn't jump between tabs
+    bool onScanTab = hostScanTab && tabWidget->currentWidget() == hostScanTab;
+    fileBrowserDock->setTitleBarWidget(onScanTab ? fileBrowserBlankTitle : nullptr);
+    if (onScanTab) {
+        fileBrowserStack->setCurrentWidget(fileBrowserBlank);
+        return;
+    }
+
     QTermWidget *terminal = getCurrentTerminal();
     bool isSSH = terminal && terminal->property("isSSHTerminal").toBool();
     QVariant data = terminal ? terminal->property("sshConnection") : QVariant();
 
     if (!isSSH || !data.canConvert<SSHConnection>()) {
         if (terminal) removeFileBrowserPane(terminal);
-        // The scan tab has no files, but the panel keeps its place so the
-        // layout doesn't jump when switching tabs
-        bool onScanTab = hostScanTab && tabWidget->currentWidget() == hostScanTab;
-        fileBrowserPlaceholder->setLocalListVisible(!onScanTab);
         QString unsavedHost = terminal ? terminal->property("unsavedSSHHost").toString() : QString();
-        if (onScanTab) fileBrowserPlaceholder->setMessage(
-            "The scan tab has no files.\n\nSwitch to a terminal tab to browse files.");
-        else fileBrowserPlaceholder->setMessage(unsavedHost.isEmpty() ? kPlaceholderText
+        fileBrowserPlaceholder->setMessage(unsavedHost.isEmpty() ? kPlaceholderText
             : QString("This tab is logged in to %1, which isn't a saved connection, "
                       "so there is no login to browse its files with.\n\n"
                       "Save it as a connection on the left to browse it.").arg(unsavedHost));

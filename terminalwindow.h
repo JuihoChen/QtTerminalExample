@@ -160,6 +160,8 @@ private:
     QDockWidget *fileBrowserDock;
     QStackedWidget *fileBrowserStack;
     FileBrowserPane *fileBrowserPlaceholder;  // Local folder only, for tabs without a server
+    QWidget *fileBrowserBlank;       // Shown in the panel on the scan tab
+    QWidget *fileBrowserBlankTitle;  // Replaces the panel's title bar on the scan tab
     QHash<QWidget*, FileBrowserPane*> fileBrowserPanes;
 
     // SSH host scan tab, shown beside the terminal tabs while open

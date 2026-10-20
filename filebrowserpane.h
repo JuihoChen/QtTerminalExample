@@ -86,7 +86,6 @@ public:
     bool hasActiveTransfers() const;
     bool hasOpenEdits() const { return !m_edits.isEmpty(); }
     void setMessage(const QString &text);  // Shown in place of the remote list (local only)
-    void setLocalListVisible(bool visible);
 
 private slots:
     void onConnected(const QString &homePath);
@@ -181,7 +180,6 @@ private:
     QLineEdit *m_remotePathEdit;
     QLabel *m_remoteStatus;
     QLabel *m_message;  // Local-only pane: why there is no remote list
-    QWidget *m_localSection;
 
     QFileSystemModel *m_localModel;
     LocalDropView *m_localView;
