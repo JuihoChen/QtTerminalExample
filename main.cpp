@@ -2,14 +2,17 @@
 #include <QApplication>
 #include "terminalwindow.h"
 #include "sftpworker.h"
-#include "popuprepaint.h"
 
 int main(int argc, char *argv[])
 {
     // Default to X11 to avoid Wayland issues, but let QT_QPA_PLATFORM pick
-    // another platform (e.g. QT_QPA_PLATFORM=wayland) to compare redrawing
+    // another platform (e.g. QT_QPA_PLATFORM=wayland) to compare redrawing.
+    // On WSLg, X11 leaves a closed menu's picture on screen for a second, so
+    // use Wayland there, falling back to X11 if Qt's Wayland plugin is missing.
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
-        qputenv("QT_QPA_PLATFORM", "xcb");
+        bool wslg = !qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME")
+                    && !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY");
+        qputenv("QT_QPA_PLATFORM", wslg ? "wayland;xcb" : "xcb");
     }
     
     // Programs in the terminals need TERM; a desktop launcher does not set it
@@ -22,9 +25,6 @@ int main(int argc, char *argv[])
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
     app.setApplicationVersion(APP_VERSION);
-
-    // Don't leave a closed menu's picture behind on WSLg
-    app.installEventFilter(new PopupRepaintFilter(&app));
 
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");
