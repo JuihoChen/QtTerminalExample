@@ -103,6 +103,8 @@ private:
 
     // Feature 4: SSH terminal creation
     QTermWidget* createSSHTerminal(const SSHConnection &connection);
+    void returnToLocalShell(QTermWidget *terminal);
+    void checkHandTypedSSH(QTermWidget *terminal);
 
     // Connection management methods
     void loadConnections();
@@ -157,7 +159,7 @@ private:
     // File browser dock: one pane per SSH tab, created when first shown
     QDockWidget *fileBrowserDock;
     QStackedWidget *fileBrowserStack;
-    QLabel *fileBrowserPlaceholder;
+    FileBrowserPane *fileBrowserPlaceholder;  // Local folder only, for tabs without a server
     QHash<QWidget*, FileBrowserPane*> fileBrowserPanes;
 
     // SSH host scan tab, shown beside the terminal tabs while open

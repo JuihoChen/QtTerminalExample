@@ -3,9 +3,12 @@
 #include "filebrowserpane.h"
 
 #include <QDockWidget>
-#include <QLabel>
 #include <QMessageBox>
 #include <QStackedWidget>
+
+static const char *kPlaceholderText =
+    "Open or switch to an SSH tab to browse its files.\n\n"
+    "Double-click a connection on the left to start one.";
 
 void TerminalWindow::setupFileBrowserDock()
 {
@@ -15,12 +18,9 @@ void TerminalWindow::setupFileBrowserDock()
                                      Qt::BottomDockWidgetArea);
 
     fileBrowserStack = new QStackedWidget(fileBrowserDock);
-    fileBrowserPlaceholder = new QLabel(
-        "Open or switch to an SSH tab to browse its files.\n\n"
-        "Double-click a connection on the left to start one.", fileBrowserStack);
-    fileBrowserPlaceholder->setAlignment(Qt::AlignCenter);
-    fileBrowserPlaceholder->setWordWrap(true);
-    fileBrowserPlaceholder->setMargin(16);
+    // Tabs without a server still get the local folder, under a note
+    fileBrowserPlaceholder = new FileBrowserPane(fileBrowserStack);
+    fileBrowserPlaceholder->setMessage(kPlaceholderText);
     fileBrowserStack->addWidget(fileBrowserPlaceholder);
 
     fileBrowserDock->setWidget(fileBrowserStack);
@@ -55,6 +55,11 @@ void TerminalWindow::updateFileBrowser()
 
     if (!isSSH || !data.canConvert<SSHConnection>()) {
         if (terminal) removeFileBrowserPane(terminal);
+        QString unsavedHost = terminal ? terminal->property("unsavedSSHHost").toString() : QString();
+        fileBrowserPlaceholder->setMessage(unsavedHost.isEmpty() ? kPlaceholderText
+            : QString("This tab is logged in to %1, which isn't a saved connection, "
+                      "so there is no login to browse its files with.\n\n"
+                      "Save it as a connection on the left to browse it.").arg(unsavedHost));
         fileBrowserStack->setCurrentWidget(fileBrowserPlaceholder);
         fileBrowserDock->setWindowTitle("File Browser");
         return;

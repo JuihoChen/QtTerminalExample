@@ -258,27 +258,9 @@ void RemoteDropView::dropEvent(QDropEvent *event)
 
 FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *parent)
     : QWidget(parent), m_connection(connection),
-      m_browseThread(new QThread(this)), m_browseWorker(new SftpWorker(connection)),
-      m_transferThread(nullptr), m_transferWorker(nullptr),
-      m_connected(false), m_nextJobId(1),
-      m_editDir(nullptr), m_editWatcher(new QFileSystemWatcher(this)),
-      m_editTimer(new QTimer(this)), m_nextEditDir(1)
+      m_browseThread(new QThread(this)), m_browseWorker(new SftpWorker(connection))
 {
-    qRegisterMetaType<RemoteEntry>("RemoteEntry");
-    qRegisterMetaType<QVector<RemoteEntry>>("QVector<RemoteEntry>");
-
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(2, 2, 2, 2);
-
-    QSplitter *splitter = new QSplitter(Qt::Vertical, this);
-    splitter->addWidget(createRemoteSection());
-    splitter->addWidget(createLocalSection());
-    splitter->addWidget(createTransferSection());
-    splitter->setStretchFactor(0, 5);
-    splitter->setStretchFactor(1, 3);
-    splitter->setStretchFactor(2, 1);
-    splitter->setCollapsible(0, false);
-    layout->addWidget(splitter);
+    setupSections(false);
 
     m_browseWorker->moveToThread(m_browseThread);
     connect(m_browseWorker, &SftpWorker::connected, this, &FileBrowserPane::onConnected);
@@ -291,22 +273,81 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
     watch(m_browseWorker, &m_browseWatchdog);
     m_browseThread->start();
 
+    setRemoteStatus(QString("Connecting to %1...").arg(m_connection.host));
+    QMetaObject::invokeMethod(m_browseWorker, "connectToServer", Qt::QueuedConnection);
+}
+
+// Local folder only, for a tab with no server to browse: a message takes the
+// remote list's place, and there is nothing to transfer
+FileBrowserPane::FileBrowserPane(QWidget *parent)
+    : QWidget(parent), m_browseThread(nullptr), m_browseWorker(nullptr)
+{
+    setupSections(true);
+}
+
+void FileBrowserPane::setupSections(bool localOnly)
+{
+    m_transferThread = nullptr;
+    m_transferWorker = nullptr;
+    m_connected = false;
+    m_nextJobId = 1;
+    m_editDir = nullptr;
+    m_editWatcher = new QFileSystemWatcher(this);
+    m_editTimer = new QTimer(this);
+    m_nextEditDir = 1;
+    m_message = nullptr;
+
+    qRegisterMetaType<RemoteEntry>("RemoteEntry");
+    qRegisterMetaType<QVector<RemoteEntry>>("QVector<RemoteEntry>");
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(2, 2, 2, 2);
+
+    QSplitter *splitter = new QSplitter(Qt::Vertical, this);
+    QWidget *remote = createRemoteSection();
+    if (localOnly) {
+        remote->hide();
+        m_message = new QLabel(this);
+        m_message->setAlignment(Qt::AlignCenter);
+        m_message->setWordWrap(true);
+        m_message->setMargin(16);
+        splitter->addWidget(m_message);
+    } else {
+        splitter->addWidget(remote);
+    }
+    splitter->addWidget(createLocalSection());
+    QWidget *transfers = createTransferSection();
+    if (localOnly) transfers->hide();
+    else splitter->addWidget(transfers);
+    if (localOnly) {
+        splitter->setStretchFactor(0, 1);
+        splitter->setStretchFactor(1, 4);
+    } else {
+        splitter->setStretchFactor(0, 5);
+        splitter->setStretchFactor(1, 3);
+        splitter->setStretchFactor(2, 1);
+    }
+    splitter->setCollapsible(0, false);
+    layout->addWidget(splitter);
+
     // Editors often save in several steps (write a new file, then rename it
     // over the old one), so wait a moment before reading the result
     m_editTimer->setSingleShot(true);
     m_editTimer->setInterval(500);
     connect(m_editWatcher, &QFileSystemWatcher::fileChanged, this, [this]() { m_editTimer->start(); });
     connect(m_editTimer, &QTimer::timeout, this, &FileBrowserPane::checkEditedFiles);
+}
 
-    setRemoteStatus(QString("Connecting to %1...").arg(m_connection.host));
-    QMetaObject::invokeMethod(m_browseWorker, "connectToServer", Qt::QueuedConnection);
+void FileBrowserPane::setMessage(const QString &text)
+{
+    if (m_message) m_message->setText(text);
 }
 
 FileBrowserPane::~FileBrowserPane()
 {
     // The workers may be waiting on a server that doesn't answer, so let
     // them finish in the background instead of freezing the app here
-    SftpWorker::retire(m_browseThread, m_browseWorker);
+    if (m_browseWorker) SftpWorker::retire(m_browseThread, m_browseWorker);
     if (m_transferWorker) SftpWorker::retire(m_transferThread, m_transferWorker);
 
     delete m_editDir;  // Removes the local copies of edited files
