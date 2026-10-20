@@ -62,7 +62,7 @@ void TerminalWindow::updateFileBrowser()
         if (tabWidget->currentWidget() == hostScanTab && !fileBrowserDock->isHidden()) {
             hostScanTab->lendImportSection(fileBrowserScanPage);
             fileBrowserStack->setCurrentWidget(fileBrowserScanPage);
-            fileBrowserDock->setWindowTitle("Import Scanned Hosts");
+            fileBrowserDock->setWindowTitle("Import Scanned Hosts - SSH Scan");
             return;
         }
         hostScanTab->takeBackImportSection();
