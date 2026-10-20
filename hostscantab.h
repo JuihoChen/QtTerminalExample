@@ -1,6 +1,7 @@
 #ifndef HOSTSCANTAB_H
 #define HOSTSCANTAB_H
 
+#include <QPointer>
 #include <QWidget>
 #include <QHash>
 #include <QList>
@@ -10,6 +11,7 @@
 #include "sshconnection.h"
 
 QT_BEGIN_NAMESPACE
+class QBoxLayout;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -44,6 +46,11 @@ public:
     // Keeps "Scan from" and the saved-host marks in step with the connection list
     void setConnections(const QList<SSHConnection> &connections, const QStringList &folders);
     bool isScanning() const { return m_scanning; }
+
+    // The import options can sit in the window's side panel while this tab is
+    // shown, so the panel's space isn't left empty (laid out top to bottom there)
+    void lendImportSection(QWidget *container);
+    void takeBackImportSection();
 
     // Builds the scan script; public so it can be tested on its own
     static QString scanScript(quint32 start, quint32 end, int port, int timeoutSeconds);
@@ -95,6 +102,9 @@ private:
     QComboBox *m_folderCombo;
     QLineEdit *m_usernameEdit;
     QPushButton *m_importButton;
+    QPointer<QWidget> m_importGroup;
+    QBoxLayout *m_importRow;
+    QBoxLayout *m_layout;
     bool m_rangeEdited;
 
     // Scan in progress

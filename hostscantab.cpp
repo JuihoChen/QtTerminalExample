@@ -55,6 +55,7 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
       m_noPortCheck(false), m_noPing(false), m_sawEnd(false), m_commandStarted(false)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
+    m_layout = layout;
 
     // Range and options
     QGroupBox *rangeGroup = new QGroupBox("Scan", this);
@@ -138,7 +139,9 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     // Import
     QGroupBox *importGroup = new QGroupBox("Import checked hosts as SSH connections", this);
     importGroup->setMaximumWidth(820);
+    m_importGroup = importGroup;
     QHBoxLayout *importRow = new QHBoxLayout(importGroup);
+    m_importRow = importRow;
     m_folderCombo = new QComboBox(this);
     m_folderCombo->setEditable(true);
     m_folderCombo->setMinimumWidth(160);
@@ -207,6 +210,9 @@ void HostScanTab::setConnections(const QList<SSHConnection> &connections, const 
 
 HostScanTab::~HostScanTab()
 {
+    // Lent to the window's side panel: not deleted along with this tab otherwise
+    if (m_importGroup && m_importGroup->parent() != this) delete m_importGroup;
+
     if (m_process) {
         m_process->disconnect(this);
         m_process->kill();
@@ -219,6 +225,26 @@ void HostScanTab::setScanFrom(int connectionIndex)
 {
     int comboIndex = m_scanFromCombo->findData(connectionIndex);
     if (comboIndex >= 0) m_scanFromCombo->setCurrentIndex(comboIndex);
+}
+
+void HostScanTab::lendImportSection(QWidget *container)
+{
+    if (m_importGroup->parentWidget() == container) return;
+    m_importRow->setDirection(QBoxLayout::TopToBottom);
+    for (int i = 0; i < m_importRow->count(); ++i) m_importRow->setStretch(i, 0);
+    // At the top of the container, above its trailing stretch
+    static_cast<QBoxLayout *>(container->layout())->insertWidget(0, m_importGroup);
+    m_importGroup->show();
+}
+
+void HostScanTab::takeBackImportSection()
+{
+    if (m_importGroup->parentWidget() == this) return;
+    m_importRow->setDirection(QBoxLayout::LeftToRight);
+    m_importRow->setStretchFactor(m_folderCombo, 1);
+    m_importRow->setStretchFactor(m_usernameEdit, 1);
+    m_layout->addWidget(m_importGroup);
+    m_importGroup->show();
 }
 
 void HostScanTab::setImportFolder(const QString &folder)
