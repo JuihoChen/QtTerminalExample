@@ -12,8 +12,124 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QSettings>
+#include <QFile>
+#include <QFileInfo>
+#include <QHash>
 
 static const char *kStartFolderSetting = "terminal/startFolder";
+
+// Command lines (argv) of every process running under the given one
+static QList<QStringList> descendantCommandLines(int rootPid)
+{
+    QHash<int, QList<int>> children;
+    const QStringList entries = QDir("/proc").entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &entry : entries) {
+        bool ok = false;
+        int pid = entry.toInt(&ok);
+        if (!ok) continue;
+        QFile stat(QString("/proc/%1/stat").arg(pid));
+        if (!stat.open(QIODevice::ReadOnly)) continue;
+        // "pid (name) state ppid ...", where the name itself may hold spaces or ")"
+        QByteArray line = stat.readAll();
+        QList<QByteArray> fields = line.mid(line.lastIndexOf(')') + 2).split(' ');
+        if (fields.size() > 1) children[fields.at(1).toInt()].append(pid);
+    }
+
+    QList<QStringList> commandLines;
+    QList<int> pending = children.value(rootPid);
+    while (!pending.isEmpty()) {
+        int pid = pending.takeFirst();
+        pending += children.value(pid);
+        QFile cmdline(QString("/proc/%1/cmdline").arg(pid));
+        if (!cmdline.open(QIODevice::ReadOnly)) continue;
+        QStringList args;
+        for (const QByteArray &arg : cmdline.readAll().split('\0')) {
+            if (!arg.isEmpty()) args << QString::fromLocal8Bit(arg);
+        }
+        if (!args.isEmpty()) commandLines << args;
+    }
+    return commandLines;
+}
+
+// Where a hand-typed "ssh" command logs in to
+struct SSHTarget {
+    QString user;
+    QString host;
+    int port = 22;
+};
+
+// Reads the user, host and port from an ssh command line; false if argv isn't one
+static bool parseSSHCommand(const QStringList &args, SSHTarget *target)
+{
+    if (args.isEmpty() || QFileInfo(args.first()).fileName() != "ssh") return false;
+
+    // ssh options that take a value (see "man ssh")
+    static const QString optionsWithValue = "BbcDEeFIiJLlmOoPpRSWw";
+    QString user;
+    QString destination;
+    int port = 22;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString &arg = args.at(i);
+        if (arg == "--") {
+            if (i + 1 < args.size()) destination = args.at(i + 1);
+            break;
+        }
+        if (!arg.startsWith('-') || arg.size() < 2) {
+            destination = arg;
+            break;
+        }
+        // Flags can be grouped ("-tt"); the first one taking a value ends the group
+        for (int j = 1; j < arg.size(); ++j) {
+            QChar option = arg.at(j);
+            if (!optionsWithValue.contains(option)) continue;
+            QString value = arg.mid(j + 1);
+            if (value.isEmpty() && i + 1 < args.size()) value = args.at(++i);
+            if (option == 'l') user = value;
+            else if (option == 'p') port = value.toInt();
+            break;
+        }
+    }
+    if (destination.isEmpty()) return false;
+
+    if (destination.startsWith("ssh://")) {
+        destination = destination.mid(6);
+        int portAt = destination.lastIndexOf(':');
+        if (portAt > destination.lastIndexOf(']')) {
+            port = destination.mid(portAt + 1).toInt();
+            destination.truncate(portAt);
+        }
+    }
+    int at = destination.lastIndexOf('@');
+    if (at != -1) {
+        user = destination.left(at);
+        destination = destination.mid(at + 1);
+    }
+    if (destination.startsWith('[') && destination.endsWith(']')) {
+        destination = destination.mid(1, destination.size() - 2);
+    }
+    // No user given: ssh logs in as the local user
+    if (user.isEmpty()) user = QString::fromLocal8Bit(qgetenv("USER"));
+
+    target->user = user;
+    target->host = destination;
+    target->port = port;
+    return true;
+}
+
+static bool targetIsConnection(const SSHTarget &target, const SSHConnection &connection)
+{
+    return target.host.compare(connection.host, Qt::CaseInsensitive) == 0 &&
+           target.user == connection.username && target.port == connection.port;
+}
+
+// Ends with a login question (password, passphrase or host key), so not logged in yet
+static bool waitingForLoginAnswer(const QString &output)
+{
+    QString tail = output.trimmed().right(80).toLower();
+    return (tail.endsWith(':') && (tail.contains("password") || tail.contains("passphrase") ||
+                                   tail.contains("verification code"))) ||
+           tail.contains("(yes/no");
+}
 
 QTermWidget* TerminalWindow::createTerminalWidget()
 {
@@ -32,6 +148,28 @@ QTermWidget* TerminalWindow::createTerminalWidget()
     connect(terminal, &QWidget::customContextMenuRequested, 
             this, &TerminalWindow::showContextMenu);
     connect(terminal, &QTermWidget::finished, this, &TerminalWindow::onTerminalFinished);
+
+    // Watch the output to notice when an SSH session in this tab ends, and,
+    // once the output goes quiet, whether "ssh" was typed by hand in the tab
+    QTimer *sshCheck = new QTimer(terminal);
+    sshCheck->setSingleShot(true);
+    connect(sshCheck, &QTimer::timeout, this, [this, terminal]() {
+        checkHandTypedSSH(terminal);
+    });
+    connect(terminal, &QTermWidget::receivedData, this, [this, terminal, sshCheck](const QString &text) {
+        if (terminal->property("isSSHTerminal").toBool()) {
+            if (text.contains("Connection to") && text.contains("closed.")) {
+                returnToLocalShell(terminal);
+            } else if (terminal->property("handTypedSSH").toBool()) {
+                // A hand-typed session can also end without that message
+                sshCheck->start(500);
+            }
+            return;
+        }
+        QString recent = terminal->property("recentOutput").toString() + text;
+        terminal->setProperty("recentOutput", recent.right(200));
+        sshCheck->start(500);
+    });
     
     return terminal;
 }
@@ -69,24 +207,6 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     if (!connection.password.isEmpty()) {
         sshCommand += "; unset SSHPASS";
     }
-
-    // Monitor terminal output to detect when SSH connection ends
-    connect(terminal, &QTermWidget::receivedData, this, [this, terminal](const QString &text) {
-        if (text.contains("Connection to") && text.contains("closed.")) {
-            bool isSSH = terminal->property("isSSHTerminal").toBool();
-            if (isSSH) {
-                int tabIndex = tabWidget->indexOf(terminal);
-                if (tabIndex != -1) {
-                    tabWidget->setTabText(tabIndex, "Terminal");
-                    terminal->setProperty("isSSHTerminal", false);
-                    terminal->setProperty("sshConnection", QVariant());
-                    if (terminal == getCurrentTerminal()) updateFileBrowser();
-                    else removeFileBrowserPane(terminal);
-                    statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
-                }
-            }
-        }
-    });
 
     // Wait for terminal to be ready and send command cleanly
     QTimer::singleShot(300, [terminal, sshCommand]() {
@@ -223,21 +343,7 @@ void TerminalWindow::onTerminalFinished()
     bool isSSH = finishedTerminal->property("isSSHTerminal").toBool();
     if (isSSH) {
         // When SSH connection ends, the terminal returns to local shell
-        // Update the tab title to reflect it's now a local terminal
-        QString currentTitle = tabWidget->tabText(tabIndex);
-        
-        // Remove SSH-specific parts from title and make it a normal terminal title
-        QString newTitle = "Terminal";  // or extract base name if you prefer
-        tabWidget->setTabText(tabIndex, newTitle);
-        
-        // Mark as normal terminal now (the shell is still running locally)
-        finishedTerminal->setProperty("isSSHTerminal", false);
-        finishedTerminal->setProperty("sshConnection", QVariant());
-        if (finishedTerminal == getCurrentTerminal()) updateFileBrowser();
-        else removeFileBrowserPane(finishedTerminal);
-        
-        // Show message in status bar
-        statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
+        returnToLocalShell(finishedTerminal);
         
         // Don't return here - let the terminal continue running as local
         // The terminal process itself hasn't finished, just the SSH connection
@@ -277,4 +383,87 @@ void TerminalWindow::selectAllText()
         //terminal->sendText("\x01"); // Ctrl+A ASCII code
         qobject_cast<EnhancedQTermWidget*>(terminal)->selectAll();
     }
+}
+
+// The SSH session in this tab ended: the tab is a local shell again, and
+// remembers its server in case the user logs back in to it by hand
+void TerminalWindow::returnToLocalShell(QTermWidget *terminal)
+{
+    int tabIndex = tabWidget->indexOf(terminal);
+    if (tabIndex == -1) return;
+
+    QVariant connection = terminal->property("sshConnection");
+    if (connection.isValid()) terminal->setProperty("lastSSHConnection", connection);
+    terminal->setProperty("recentOutput", QString());
+    terminal->setProperty("handTypedSSH", false);
+
+    tabWidget->setTabText(tabIndex, "Terminal");
+    terminal->setProperty("isSSHTerminal", false);
+    terminal->setProperty("sshConnection", QVariant());
+    if (terminal == getCurrentTerminal()) updateFileBrowser();
+    else removeFileBrowserPane(terminal);
+    updateStatusBar();
+    statusBar()->showMessage("SSH connection closed - returned to local shell", 3000);
+}
+
+// Runs once a local tab's output goes quiet. If "ssh" typed in the tab has
+// logged in to a saved connection, the tab becomes that connection's SSH tab,
+// so the File Browser follows it; a host that isn't saved is noted instead,
+// since the File Browser has no login for it.
+void TerminalWindow::checkHandTypedSSH(QTermWidget *terminal)
+{
+    int tabIndex = tabWidget->indexOf(terminal);
+    if (tabIndex == -1) return;
+    bool isSSH = terminal->property("isSSHTerminal").toBool();
+    bool handTyped = terminal->property("handTypedSSH").toBool();
+    if (isSSH && !handTyped) return;  // Opened from the connection list
+
+    QList<SSHTarget> targets;
+    for (const QStringList &args : descendantCommandLines(terminal->getShellPID())) {
+        SSHTarget target;
+        if (parseSSHCommand(args, &target)) targets << target;
+    }
+
+    // The connection this tab last had comes first, then the others in list order
+    QList<SSHConnection> candidates;
+    QVariant last = terminal->property("lastSSHConnection");
+    if (last.canConvert<SSHConnection>()) candidates << qvariant_cast<SSHConnection>(last);
+    candidates += connections;
+
+    const SSHConnection *match = nullptr;
+    for (const SSHConnection &connection : candidates) {
+        for (const SSHTarget &target : targets) {
+            if (targetIsConnection(target, connection)) {
+                match = &connection;
+                break;
+            }
+        }
+        if (match) break;
+    }
+
+    if (isSSH) {
+        SSHConnection current = qvariant_cast<SSHConnection>(terminal->property("sshConnection"));
+        if (!match || !(*match == current)) returnToLocalShell(terminal);
+        return;
+    }
+
+    QString unsavedHost;
+    if (!match && !targets.isEmpty()) {
+        unsavedHost = QString("%1@%2").arg(targets.first().user, targets.first().host);
+    }
+    if (terminal->property("unsavedSSHHost").toString() != unsavedHost) {
+        terminal->setProperty("unsavedSSHHost", unsavedHost);
+        if (terminal == getCurrentTerminal()) updateFileBrowser();
+    }
+
+    if (!match || waitingForLoginAnswer(terminal->property("recentOutput").toString())) return;
+
+    terminal->setProperty("recentOutput", QString());
+    terminal->setProperty("handTypedSSH", true);
+    terminal->setProperty("isSSHTerminal", true);
+    terminal->setProperty("sshConnection", QVariant::fromValue(*match));
+    tabWidget->setTabText(tabIndex, QString("SSH: %1").arg(match->name));
+    if (terminal == getCurrentTerminal()) updateFileBrowser();
+    updateStatusBar();
+    statusBar()->showMessage(QString("Logged in to %1 - File Browser follows this tab").arg(match->name), 3000);
 }

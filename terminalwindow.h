@@ -103,6 +103,8 @@ private:
 
     // Feature 4: SSH terminal creation
     QTermWidget* createSSHTerminal(const SSHConnection &connection);
+    void returnToLocalShell(QTermWidget *terminal);
+    void checkHandTypedSSH(QTermWidget *terminal);
 
     // Connection management methods
     void loadConnections();
