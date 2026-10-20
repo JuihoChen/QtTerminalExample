@@ -319,7 +319,7 @@ All SSH connections use optimized settings:
 - **Large History Buffer** - 200,000 line history per terminal
 - **No Blink on New Tabs** - A new tab keeps the previous picture until its shell prompt is drawn (at most 500 ms)
 - **Desktop Launch Ready** - Sets a default `TERM` when started from a desktop shortcut
-- **Display Platform** - Runs on X11 (`xcb`) by default; set `QT_QPA_PLATFORM` (for example `QT_QPA_PLATFORM=wayland ./QtTerminalExample`) to use another
+- **Display Platform** - Runs on X11 (`xcb`) by default, and on Wayland under WSL, where X11 leaves closed menus on screen briefly; set `QT_QPA_PLATFORM` (for example `QT_QPA_PLATFORM=wayland ./QtTerminalExample`) to use another
 - **Smart Font Scaling** - Synchronized font changes across all terminals
 
 ### Error Handling & Recovery
@@ -478,7 +478,7 @@ QtTerminalExample/
 - ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
 - ✅ **Start Folder** - Local terminals start in your home folder; File > Start Folder... picks another
 - ✅ **Hidden Saved Passwords** - Passwords reach `sshpass -e` through `SSHPASS`, so they never show in the terminal, shell history or `ps`
-- ✅ **Display Platform** - `QT_QPA_PLATFORM` is honored; X11 stays the default
+- ✅ **Display Platform** - `QT_QPA_PLATFORM` is honored; X11 stays the default, Wayland under WSL
 - ✅ **Folder Transfers** - Unreadable or special files are skipped (and listed) instead of stopping the whole folder; symlinks shown in the local list
 - ✅ **SSH Host Scan** - Find hosts with SSH open (IP, MAC) from this computer or through a saved connection, and import them into a folder
 - ✅ **Smooth New Tabs** - The terminal area no longer blinks blank when a new tab opens
@@ -550,7 +550,7 @@ QtTerminalExample/
 | **Advanced Features** |  |  |
 | SSH Key Support | ✅ Complete | Per-connection key file (`ssh -i`) and SSH agent integration |
 | Local Start Folder | ✅ Complete | Choose where local terminals open (File → Start Folder...) |
-| Display Platform Choice | ✅ Complete | X11 by default, `QT_QPA_PLATFORM` overrides |
+| Display Platform Choice | ✅ Complete | X11 by default (Wayland under WSL), `QT_QPA_PLATFORM` overrides |
 | Password Encryption | 🚧 Planned | Secure encrypted storage implementation |
 | Connection History | 🚧 Planned | Recent connections and usage tracking |
 | Import/Export | 🚧 Planned | Configuration sharing and migration tools |

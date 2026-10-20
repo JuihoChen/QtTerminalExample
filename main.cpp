@@ -6,9 +6,13 @@
 int main(int argc, char *argv[])
 {
     // Default to X11 to avoid Wayland issues, but let QT_QPA_PLATFORM pick
-    // another platform (e.g. QT_QPA_PLATFORM=wayland) to compare redrawing
+    // another platform (e.g. QT_QPA_PLATFORM=wayland) to compare redrawing.
+    // On WSLg, X11 leaves a closed menu's picture on screen for a second, so
+    // use Wayland there, falling back to X11 if Qt's Wayland plugin is missing.
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
-        qputenv("QT_QPA_PLATFORM", "xcb");
+        bool wslg = !qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME")
+                    && !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY");
+        qputenv("QT_QPA_PLATFORM", wslg ? "wayland;xcb" : "xcb");
     }
     
     // Programs in the terminals need TERM; a desktop launcher does not set it
