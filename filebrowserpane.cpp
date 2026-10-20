@@ -315,7 +315,8 @@ void FileBrowserPane::setupSections(bool localOnly)
     } else {
         splitter->addWidget(remote);
     }
-    splitter->addWidget(createLocalSection());
+    m_localSection = createLocalSection();
+    splitter->addWidget(m_localSection);
     QWidget *transfers = createTransferSection();
     if (localOnly) transfers->hide();
     else splitter->addWidget(transfers);
@@ -336,6 +337,11 @@ void FileBrowserPane::setupSections(bool localOnly)
     m_editTimer->setInterval(500);
     connect(m_editWatcher, &QFileSystemWatcher::fileChanged, this, [this]() { m_editTimer->start(); });
     connect(m_editTimer, &QTimer::timeout, this, &FileBrowserPane::checkEditedFiles);
+}
+
+void FileBrowserPane::setLocalListVisible(bool visible)
+{
+    m_localSection->setVisible(visible);
 }
 
 void FileBrowserPane::setMessage(const QString &text)

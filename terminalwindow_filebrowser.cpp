@@ -1,6 +1,7 @@
 // File browser dock: a WinSCP-style SFTP browser for the current SSH tab
 #include "terminalwindow.h"
 #include "filebrowserpane.h"
+#include "hostscantab.h"
 
 #include <QDockWidget>
 #include <QMessageBox>
@@ -55,8 +56,14 @@ void TerminalWindow::updateFileBrowser()
 
     if (!isSSH || !data.canConvert<SSHConnection>()) {
         if (terminal) removeFileBrowserPane(terminal);
+        // The scan tab has no files, but the panel keeps its place so the
+        // layout doesn't jump when switching tabs
+        bool onScanTab = hostScanTab && tabWidget->currentWidget() == hostScanTab;
+        fileBrowserPlaceholder->setLocalListVisible(!onScanTab);
         QString unsavedHost = terminal ? terminal->property("unsavedSSHHost").toString() : QString();
-        fileBrowserPlaceholder->setMessage(unsavedHost.isEmpty() ? kPlaceholderText
+        if (onScanTab) fileBrowserPlaceholder->setMessage(
+            "The scan tab has no files.\n\nSwitch to a terminal tab to browse files.");
+        else fileBrowserPlaceholder->setMessage(unsavedHost.isEmpty() ? kPlaceholderText
             : QString("This tab is logged in to %1, which isn't a saved connection, "
                       "so there is no login to browse its files with.\n\n"
                       "Save it as a connection on the left to browse it.").arg(unsavedHost));
