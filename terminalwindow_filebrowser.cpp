@@ -1,10 +1,12 @@
 // File browser dock: a WinSCP-style SFTP browser for the current SSH tab
 #include "terminalwindow.h"
 #include "filebrowserpane.h"
+#include "hostscantab.h"
 
 #include <QDockWidget>
 #include <QMessageBox>
 #include <QStackedWidget>
+#include <QVBoxLayout>
 
 static const char *kPlaceholderText =
     "Open or switch to an SSH tab to browse its files.\n\n"
@@ -22,6 +24,10 @@ void TerminalWindow::setupFileBrowserDock()
     fileBrowserPlaceholder = new FileBrowserPane(fileBrowserStack);
     fileBrowserPlaceholder->setMessage(kPlaceholderText);
     fileBrowserStack->addWidget(fileBrowserPlaceholder);
+    fileBrowserScanPage = new QWidget(fileBrowserStack);
+    QVBoxLayout *scanLayout = new QVBoxLayout(fileBrowserScanPage);
+    scanLayout->addStretch();  // Import options are inserted above, at the top
+    fileBrowserStack->addWidget(fileBrowserScanPage);
 
     fileBrowserDock->setWidget(fileBrowserStack);
     addDockWidget(Qt::RightDockWidgetArea, fileBrowserDock);
@@ -30,6 +36,7 @@ void TerminalWindow::setupFileBrowserDock()
     // Panes connect to the server only while the dock is open
     connect(fileBrowserDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
         if (visible) updateFileBrowser();
+        else if (hostScanTab) hostScanTab->takeBackImportSection();  // Keep them reachable
     });
 }
 
@@ -49,6 +56,18 @@ void TerminalWindow::showFileBrowser()
 // Shows the pane belonging to the current tab, creating it on first use
 void TerminalWindow::updateFileBrowser()
 {
+    // The scan tab has no files: its import options use the panel instead,
+    // so the panel keeps its width and nothing moves when switching tabs
+    if (hostScanTab) {
+        if (tabWidget->currentWidget() == hostScanTab && !fileBrowserDock->isHidden()) {
+            hostScanTab->lendImportSection(fileBrowserScanPage);
+            fileBrowserStack->setCurrentWidget(fileBrowserScanPage);
+            fileBrowserDock->setWindowTitle("Import Scanned Hosts");
+            return;
+        }
+        hostScanTab->takeBackImportSection();
+    }
+
     QTermWidget *terminal = getCurrentTerminal();
     bool isSSH = terminal && terminal->property("isSSHTerminal").toBool();
     QVariant data = terminal ? terminal->property("sshConnection") : QVariant();

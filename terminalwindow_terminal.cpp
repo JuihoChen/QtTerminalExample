@@ -9,7 +9,6 @@
 #include <QApplication>
 #include <QStatusBar>
 #include <QClipboard>
-#include <QDockWidget>
 #include <QDir>
 #include <QFileDialog>
 #include <QSettings>
@@ -314,19 +313,7 @@ void TerminalWindow::onTabChanged(int index)
 {
     Q_UNUSED(index)
     updateStatusBar();
-    if (fileBrowserDock) {
-        // The scan tab has no files, so the File Browser steps aside for it
-        // and comes back on the next terminal tab if it was open
-        bool onScanTab = hostScanTab && tabWidget->currentWidget() == hostScanTab;
-        if (onScanTab && !fileBrowserDock->isHidden()) {
-            fileBrowserHiddenForScan = true;
-            fileBrowserDock->hide();
-        } else if (!onScanTab && fileBrowserHiddenForScan) {
-            fileBrowserHiddenForScan = false;
-            fileBrowserDock->show();
-        }
-        updateFileBrowser();
-    }
+    if (fileBrowserDock) updateFileBrowser();
     
     // Focus the current terminal
     QTermWidget *terminal = getCurrentTerminal();
