@@ -79,11 +79,13 @@ class FileBrowserPane : public QWidget
 
 public:
     explicit FileBrowserPane(const SSHConnection &connection, QWidget *parent = nullptr);
+    explicit FileBrowserPane(QWidget *parent);
     ~FileBrowserPane() override;
 
     SSHConnection connection() const { return m_connection; }
     bool hasActiveTransfers() const;
     bool hasOpenEdits() const { return !m_edits.isEmpty(); }
+    void setMessage(const QString &text);  // Shown in place of the remote list (local only)
 
 private slots:
     void onConnected(const QString &homePath);
@@ -127,6 +129,7 @@ private:
     void watch(SftpWorker *worker, Watchdog *watchdog);
     QString stalledMessage(const QString &step) const;
 
+    void setupSections(bool localOnly);
     QWidget *createRemoteSection();
     QWidget *createLocalSection();
     QWidget *createTransferSection();
@@ -176,6 +179,7 @@ private:
     RemoteDropView *m_remoteView;
     QLineEdit *m_remotePathEdit;
     QLabel *m_remoteStatus;
+    QLabel *m_message;  // Local-only pane: why there is no remote list
 
     QFileSystemModel *m_localModel;
     LocalDropView *m_localView;
