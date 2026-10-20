@@ -2,6 +2,7 @@
 #include <QApplication>
 #include "terminalwindow.h"
 #include "sftpworker.h"
+#include "popuprepaint.h"
 
 int main(int argc, char *argv[])
 {
@@ -21,6 +22,9 @@ int main(int argc, char *argv[])
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
     app.setApplicationVersion(APP_VERSION);
+
+    // Don't leave a closed menu's picture behind on WSLg
+    app.installEventFilter(new PopupRepaintFilter(&app));
 
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");
