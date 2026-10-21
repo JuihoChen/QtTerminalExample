@@ -43,6 +43,12 @@ namespace {
 const int kStallSeconds = 30;
 
 const char *const kEditorSetting = "fileBrowser/editor";
+const char *const kShowHiddenSetting = "fileBrowser/showHidden";
+
+// The local list's filter. System includes links whose target is missing,
+// which Qt otherwise hides
+const QDir::Filters kLocalFilter = QDir::AllDirs | QDir::Files | QDir::System
+                                   | QDir::NoDotAndDotDot | QDir::Drives;
 
 // Transfer list item data: the summary (column 0) and the full error text
 // (column 2) of a transfer that failed or skipped items
@@ -330,12 +336,38 @@ void FileBrowserPane::setupSections(bool localOnly)
     splitter->setCollapsible(0, false);
     layout->addWidget(splitter);
 
+    // One switch for both lists, like WinSCP's; shown unless turned off before
+    m_showHiddenAction = new QAction("Show Hidden Files", this);
+    m_showHiddenAction->setCheckable(true);
+    m_showHiddenAction->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_H));
+    m_showHiddenAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    connect(m_showHiddenAction, &QAction::toggled, this, [this](bool show) {
+        QSettings().setValue(kShowHiddenSetting, show);
+        setShowHidden(show);
+        // Other SSH tabs' browsers follow, so the setting means the same everywhere
+        for (QWidget *widget : QApplication::allWidgets()) {
+            if (FileBrowserPane *pane = qobject_cast<FileBrowserPane *>(widget)) {
+                pane->m_showHiddenAction->setChecked(show);
+            }
+        }
+    });
+    addAction(m_showHiddenAction);
+    bool showHidden = QSettings().value(kShowHiddenSetting, true).toBool();
+    m_showHiddenAction->setChecked(showHidden);
+    setShowHidden(showHidden);
+
     // Editors often save in several steps (write a new file, then rename it
     // over the old one), so wait a moment before reading the result
     m_editTimer->setSingleShot(true);
     m_editTimer->setInterval(500);
     connect(m_editWatcher, &QFileSystemWatcher::fileChanged, this, [this]() { m_editTimer->start(); });
     connect(m_editTimer, &QTimer::timeout, this, &FileBrowserPane::checkEditedFiles);
+}
+
+void FileBrowserPane::setShowHidden(bool show)
+{
+    m_remoteProxy->setShowHidden(show);
+    m_localModel->setFilter(show ? kLocalFilter | QDir::Hidden : kLocalFilter);
 }
 
 void FileBrowserPane::setMessage(const QString &text)
@@ -518,9 +550,7 @@ QWidget *FileBrowserPane::createLocalSection()
     layout->addLayout(bar);
 
     m_localModel = new LocalFileModel(this);
-    // System includes links whose target is missing, which Qt otherwise hides
-    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::System | QDir::NoDotAndDotDot
-                            | QDir::Drives);
+    m_localModel->setFilter(kLocalFilter);
     m_localModel->setReadOnly(true);
 
     m_localView = new LocalDropView(section);
@@ -757,6 +787,8 @@ void FileBrowserPane::showRemoteContextMenu(const QPoint &pos)
     }
     menu.addAction(style()->standardIcon(QStyle::SP_BrowserReload), "Refresh",
                    this, &FileBrowserPane::refreshRemote);
+    menu.addSeparator();
+    menu.addAction(m_showHiddenAction);
 
     menu.exec(m_remoteView->viewport()->mapToGlobal(pos));
 }
@@ -795,7 +827,8 @@ void FileBrowserPane::showLocalContextMenu(const QPoint &pos)
             if (chooseEditor()) openInEditor(file);
         });
     }
-    if (menu.isEmpty()) return;
+    if (!menu.isEmpty()) menu.addSeparator();
+    menu.addAction(m_showHiddenAction);
     menu.exec(m_localView->viewport()->mapToGlobal(pos));
 }
 

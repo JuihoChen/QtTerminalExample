@@ -181,6 +181,21 @@ RemoteSortProxy::RemoteSortProxy(QObject *parent)
     setSortRole(RemoteFileModel::SortRole);
 }
 
+void RemoteSortProxy::setShowHidden(bool show)
+{
+    if (show == m_showHidden) return;
+    m_showHidden = show;
+    invalidateFilter();
+}
+
+bool RemoteSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+    if (m_showHidden) return true;
+    QModelIndex index = sourceModel()->index(sourceRow, 0, sourceParent);
+    RemoteEntry entry = index.data(RemoteFileModel::EntryRole).value<RemoteEntry>();
+    return RemoteFileModel::isParentEntry(entry) || !entry.name.startsWith('.');
+}
+
 bool RemoteSortProxy::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
     RemoteEntry a = left.data(RemoteFileModel::EntryRole).value<RemoteEntry>();

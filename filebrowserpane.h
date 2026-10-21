@@ -19,6 +19,7 @@ class QThread;
 class QTimer;
 class QFileSystemWatcher;
 class QTemporaryDir;
+class QAction;
 QT_END_NAMESPACE
 
 class RemoteFileModel;
@@ -143,6 +144,8 @@ private:
     void setLocalFolder(const QString &path);
     QString localFolder() const;
 
+    void setShowHidden(bool show);
+
     void downloadEntries(const QVector<RemoteEntry> &entries, const QString &localDir);
     void uploadPaths(const QStringList &localPaths, const QString &remoteDir);
     int addTransfer(const QString &name, bool isDir, bool upload, const QString &tooltip);
@@ -184,6 +187,8 @@ private:
     QFileSystemModel *m_localModel;
     LocalDropView *m_localView;
     QLineEdit *m_localPathEdit;
+
+    QAction *m_showHiddenAction;  // Ctrl+Alt+H, for both lists
 
     QTreeWidget *m_transferList;
     QHash<int, Transfer> m_transfers;
