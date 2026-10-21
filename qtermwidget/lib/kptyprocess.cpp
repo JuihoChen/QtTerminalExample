@@ -73,7 +73,10 @@ KPtyProcess::~KPtyProcess()
         }
     }
     delete d->pty;
-    waitForFinished(300); // give it some time to finish
+    // Closing the pty hangs up the shell. Give it time to exit by itself:
+    // bash saves its history then, and a second signal while it is saving
+    // kills it on the spot, leaving a ~/.bash_history-NNNNN.tmp file behind.
+    waitForFinished(3000);
     if (state() != QProcess::NotRunning)
     {
         qWarning() << Q_FUNC_INFO << "the terminal process is still running, trying to stop it by SIGHUP";
