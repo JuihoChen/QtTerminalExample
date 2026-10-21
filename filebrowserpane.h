@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QTreeView>
 #include <QHash>
+#include <QSortFilterProxyModel>
 
 #include "sshconnection.h"
 #include "sftpworker.h"
@@ -24,6 +25,28 @@ QT_END_NAMESPACE
 
 class RemoteFileModel;
 class RemoteSortProxy;
+
+// Local folder list's view of a QFileSystemModel, leaving out dotfiles while
+// hidden files are switched off; sorting is left to the QFileSystemModel
+class LocalHiddenFilter : public QSortFilterProxyModel
+{
+    Q_OBJECT
+
+public:
+    LocalHiddenFilter(QFileSystemModel *source, QObject *parent);
+
+    QFileSystemModel *fileSystemModel() const { return m_source; }
+    void setShowHidden(bool show);
+    void refilter();  // After the root folder changes
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
+
+private:
+    QFileSystemModel *m_source;
+    bool m_showHidden = true;
+};
 
 // Local folder list that accepts remote entries dropped from its own pane
 class LocalDropView : public QTreeView
@@ -185,6 +208,7 @@ private:
     QLabel *m_message;  // Local-only pane: why there is no remote list
 
     QFileSystemModel *m_localModel;
+    LocalHiddenFilter *m_localFilter;
     LocalDropView *m_localView;
     QLineEdit *m_localPathEdit;
 
