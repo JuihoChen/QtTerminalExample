@@ -1,0 +1,12 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="qtterminal-16.png">icons/qtterminal-16.png</file>
+        <file alias="qtterminal-24.png">icons/qtterminal-24.png</file>
+        <file alias="qtterminal-32.png">icons/qtterminal-32.png</file>
+        <file alias="qtterminal-48.png">icons/qtterminal-48.png</file>
+        <file alias="qtterminal-64.png">icons/qtterminal-64.png</file>
+        <file alias="qtterminal-128.png">icons/qtterminal-128.png</file>
+        <file alias="qtterminal-256.png">icons/qtterminal-256.png</file>
+    </qresource>
+</RCC>

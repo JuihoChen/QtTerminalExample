@@ -211,7 +211,7 @@ From the `build` folder:
 ```
 
 ### Desktop Shortcut (Optional)
-Run this from the `build` folder after building. It adds "Qt Terminal SSH Manager" to your app menu with a network/server icon, so it stands apart from the regular terminal, and puts a launcher on your desktop:
+Run this from the `build` folder after building. It adds "Qt Terminal SSH Manager" to your app menu with the app's own icon (the build copies `qtterminal.svg` next to the program), so it stands apart from the regular terminal, and puts a launcher on your desktop:
 ```bash
 BIN="$PWD/QtTerminalExample"
 mkdir -p ~/.local/share/applications
@@ -221,7 +221,7 @@ Name=Qt Terminal SSH Manager
 Comment=Terminal with SSH Connection Management
 Exec=$BIN
 Path=$(dirname "$BIN")
-Icon=network-server
+Icon=$(dirname "$BIN")/qtterminal.svg
 Type=Application
 Terminal=false
 Categories=System;TerminalEmulator;
@@ -237,7 +237,7 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 
 - Then search for "Qt Terminal" in the app menu. If the desktop icon shows a warning, right-click it and choose **Allow Launching**.
 - `StartupWMClass=QtTerminal` matches the app's window class, so the dock groups the running window with the launcher instead of showing a second, generic icon. If you pinned an older launcher, unpin it and pin the app again from the menu.
-- Other built-in icon names you can use instead of `network-server`: `network-workgroup`, `preferences-system-network`, `utilities-system-monitor`.
+- To use a theme icon instead, set `Icon=` to a name such as `network-server`, `network-workgroup` or `utilities-system-monitor`.
 - If you move or rebuild the project in a different folder, run the commands again so `Exec` points at the new location.
 
 ## Usage Guide
@@ -475,7 +475,16 @@ QtTerminalExample/
 
 ## Version History
 
-### v0.7 (Current)
+### v0.8 (Current)
+- ✅ **About Dialog** - Shows the git commit and build time of the running build (refreshed on every `make`), the Qt version, key shortcuts and the GitHub link
+- ✅ **App Icon** - A bundled terminal-with-globe icon for the window, taskbar and desktop launcher, so it no longer depends on emoji fonts
+- ✅ **Hidden Files** - The file browser shows dot files, with `Ctrl+Alt+H` to hide them
+- ✅ **Edit Local Files** - `F4` in the lower (local) file list opens the file in your editor
+- ✅ **File Browser Follows Tabs** - Follows a hand-typed `ssh`, keeps the local folder on local tabs, and no longer freezes when a server doesn't answer
+- ✅ **Scan Improvements** - Explains why SSH isn't open, reports scan failures, and puts the import options in the side panel
+- ✅ **Shell History Kept** - Shells get time to save their history when a tab or the window closes
+
+### v0.7
 - ✅ **File Browser** - WinSCP-style SFTP browser (libssh) with drag-and-drop downloads and uploads and a transfer list; replaces the Browse/Download dialogs
 - ✅ **View and edit remote files** - `F3` opens a read-only copy; `F4` opens a remote file in your editor and uploads it on every save
 - ✅ **Start Folder** - Local terminals start in your home folder; File > Start Folder... picks another

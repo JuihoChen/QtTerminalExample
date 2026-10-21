@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3445"/>
+      <stop offset="1" stop-color="#171c26"/>
+    </linearGradient>
+    <linearGradient id="globe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4aa3ff"/>
+      <stop offset="1" stop-color="#1f6fd6"/>
+    </linearGradient>
+  </defs>
+  <!-- Terminal window -->
+  <rect x="12" y="28" width="216" height="176" rx="22" fill="url(#body)"/>
+  <path d="M34 28h172a22 22 0 0 1 22 22v10H12V50a22 22 0 0 1 22-22z" fill="#3c4760"/>
+  <circle cx="36" cy="44" r="6" fill="#ff6159"/>
+  <circle cx="56" cy="44" r="6" fill="#ffbd2e"/>
+  <circle cx="76" cy="44" r="6" fill="#28c941"/>
+  <!-- Prompt -->
+  <path d="M42 92l34 26-34 26" fill="none" stroke="#3ddc84" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="88" y="138" width="52" height="13" rx="6.5" fill="#3ddc84"/>
+  <!-- Network globe badge -->
+  <circle cx="190" cy="190" r="56" fill="#ffffff"/>
+  <circle cx="190" cy="190" r="47" fill="url(#globe)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+    <circle cx="190" cy="190" r="34"/>
+    <ellipse cx="190" cy="190" rx="14" ry="34"/>
+    <path d="M156 190h68M162 172h56M162 208h56"/>
+  </g>
+</svg>

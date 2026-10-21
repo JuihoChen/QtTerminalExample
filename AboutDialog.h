@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QPixmap>

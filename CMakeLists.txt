@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(QtTerminalExample VERSION 0.7.0)
+project(QtTerminalExample VERSION 0.8.0)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the build type." FORCE)
@@ -8,6 +8,7 @@ endif()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -37,7 +38,23 @@ add_executable(QtTerminalExample
     hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
+    resources.qrc
+    ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.cpp
 )
+
+# Regenerate the git commit and build time on every build, not only when
+# CMake reruns, so the About dialog never shows a stale build
+add_custom_target(buildinfo
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/buildinfo.cpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/buildinfo.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.cpp
+    COMMENT "Updating build info"
+)
+add_dependencies(QtTerminalExample buildinfo)
+# buildinfo.cpp is generated in the build folder but includes buildinfo.h from here
+target_include_directories(QtTerminalExample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The About dialog shows this, so the version lives only in project() above
 target_compile_definitions(QtTerminalExample PRIVATE
@@ -106,6 +123,13 @@ if(USE_STATIC_QTERMWIDGET)
         COMMENT "Copying qtermwidget color schemes next to the executable"
     )
 endif()
+
+# A copy of the app icon next to the executable, for the desktop launcher's Icon=
+add_custom_command(TARGET QtTerminalExample POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/icons/qtterminal.svg"
+        "$<TARGET_FILE_DIR:QtTerminalExample>/qtterminal.svg"
+)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Using QTermWidget library: ${QTERMWIDGET_LIBRARY}")
