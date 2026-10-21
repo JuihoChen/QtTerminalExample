@@ -29,7 +29,12 @@ int main(int argc, char *argv[])
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");
 
-    app.setWindowIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
+    // Bundled app icon as PNGs, so it shows without Qt's SVG plugin. They are
+    // rendered from icons/qtterminal.svg (16-32 px from qtterminal-small.svg).
+    QIcon appIcon;
+    for (int size : {16, 24, 32, 48, 64, 128, 256})
+        appIcon.addFile(QString(":/icons/qtterminal-%1.png").arg(size), QSize(size, size));
+    app.setWindowIcon(appIcon);
 
     // Configure color schemes globally for all QTermWidget instances.
     // The color-schemes folder next to the executable is copied there by
