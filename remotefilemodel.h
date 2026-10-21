@@ -48,17 +48,22 @@ private:
     QFileIconProvider m_icons;
 };
 
-// Keeps ".." on top and folders above files, whichever way a column sorts
+// Keeps ".." on top and folders above files, whichever way a column sorts,
+// and leaves out dotfiles while hidden files are switched off
 class RemoteSortProxy : public QSortFilterProxyModel
 {
 public:
     explicit RemoteSortProxy(QObject *parent = nullptr);
 
+    void setShowHidden(bool show);
+
 protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
 
 private:
     QCollator m_collator;
+    bool m_showHidden = true;
 };
 
 #endif // REMOTEFILEMODEL_H
