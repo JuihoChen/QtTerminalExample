@@ -138,7 +138,7 @@ void TerminalWindow::setupMenus()
     connectionsMenu->addSeparator();
     connectionsMenu->addAction("&Refresh", this, [this]() {
         loadConnections();
-    }, QKeySequence::Refresh);
+    }, QKeySequence(Qt::Key_F5));  // Not QKeySequence::Refresh: on Linux it adds Ctrl+R, which bash needs
 
     // Help menu
     QMenu* helpMenu = menuBar->addMenu("&Help");
