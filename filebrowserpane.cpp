@@ -518,9 +518,10 @@ QWidget *FileBrowserPane::createLocalSection()
     layout->addLayout(bar);
 
     m_localModel = new LocalFileModel(this);
-    // System includes links whose target is missing, which Qt otherwise hides
-    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::System | QDir::NoDotAndDotDot
-                            | QDir::Drives);
+    // System includes links whose target is missing, which Qt otherwise hides.
+    // Hidden shows dotfiles, matching the remote pane, which lists everything.
+    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::Hidden | QDir::System
+                            | QDir::NoDotAndDotDot | QDir::Drives);
     m_localModel->setReadOnly(true);
 
     m_localView = new LocalDropView(section);
