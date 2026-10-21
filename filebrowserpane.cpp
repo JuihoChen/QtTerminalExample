@@ -25,6 +25,7 @@
 #include <QProcess>
 #include <QProgressBar>
 #include <QSettings>
+#include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QStyle>
 #include <QTemporaryDir>
@@ -45,10 +46,6 @@ const int kStallSeconds = 30;
 const char *const kEditorSetting = "fileBrowser/editor";
 const char *const kShowHiddenSetting = "fileBrowser/showHidden";
 
-// The local list's filter. System includes links whose target is missing,
-// which Qt otherwise hides
-const QDir::Filters kLocalFilter = QDir::AllDirs | QDir::Files | QDir::System
-                                   | QDir::NoDotAndDotDot | QDir::Drives;
 
 // Transfer list item data: the summary (column 0) and the full error text
 // (column 2) of a transfer that failed or skipped items
@@ -136,6 +133,46 @@ private:
 
 } // namespace
 
+// ============ LocalHiddenFilter ============
+
+// Hides dotfiles from the local list while hidden files are switched off.
+// QFileSystemModel's own QDir::Hidden filter can't do this reliably: it keeps
+// showing a hidden folder the view still points at (the one last clicked)
+LocalHiddenFilter::LocalHiddenFilter(QFileSystemModel *source, QObject *parent)
+    : QSortFilterProxyModel(parent), m_source(source)
+{
+    setSourceModel(source);
+}
+
+void LocalHiddenFilter::setShowHidden(bool show)
+{
+    if (show == m_showHidden) return;
+    m_showHidden = show;
+    invalidateFilter();
+}
+
+void LocalHiddenFilter::refilter()
+{
+    invalidateFilter();
+}
+
+void LocalHiddenFilter::sort(int column, Qt::SortOrder order)
+{
+    // The source sorts (folders first); this keeps its order
+    m_source->sort(column, order);
+}
+
+bool LocalHiddenFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+    if (m_showHidden) return true;
+    QModelIndex index = m_source->index(sourceRow, 0, sourceParent);
+    if (!m_source->fileName(index).startsWith('.')) return true;
+    // A hidden folder opened by typing its path stays reachable
+    QString path = m_source->filePath(index);
+    QString root = m_source->rootPath();
+    return root == path || root.startsWith(path + '/');
+}
+
 // ============ LocalDropView ============
 
 LocalDropView::LocalDropView(QWidget *parent)
@@ -164,10 +201,12 @@ bool LocalDropView::accepts(const QMimeData *data) const
 
 QString LocalDropView::dropFolder(const QPoint &pos) const
 {
-    QFileSystemModel *fs = qobject_cast<QFileSystemModel *>(model());
-    QModelIndex index = indexAt(pos);
-    if (fs && index.isValid() && fs->isDir(index)) return fs->filePath(index);
-    return fs ? fs->filePath(rootIndex()) : QString();
+    auto *filter = qobject_cast<LocalHiddenFilter *>(model());
+    if (!filter) return QString();
+    QFileSystemModel *fs = filter->fileSystemModel();
+    QModelIndex index = filter->mapToSource(indexAt(pos));
+    if (index.isValid() && fs->isDir(index)) return fs->filePath(index);
+    return fs->filePath(filter->mapToSource(rootIndex()));
 }
 
 void LocalDropView::dragEnterEvent(QDragEnterEvent *event)
@@ -367,7 +406,7 @@ void FileBrowserPane::setupSections(bool localOnly)
 void FileBrowserPane::setShowHidden(bool show)
 {
     m_remoteProxy->setShowHidden(show);
-    m_localModel->setFilter(show ? kLocalFilter | QDir::Hidden : kLocalFilter);
+    m_localFilter->setShowHidden(show);
 }
 
 void FileBrowserPane::setMessage(const QString &text)
@@ -550,11 +589,15 @@ QWidget *FileBrowserPane::createLocalSection()
     layout->addLayout(bar);
 
     m_localModel = new LocalFileModel(this);
-    m_localModel->setFilter(kLocalFilter);
+    // System includes links whose target is missing, which Qt otherwise hides.
+    // Hidden files are always listed here; m_localFilter decides whether to show them
+    m_localModel->setFilter(QDir::AllDirs | QDir::Files | QDir::Hidden | QDir::System
+                            | QDir::NoDotAndDotDot | QDir::Drives);
     m_localModel->setReadOnly(true);
+    m_localFilter = new LocalHiddenFilter(m_localModel, this);
 
     m_localView = new LocalDropView(section);
-    m_localView->setModel(m_localModel);
+    m_localView->setModel(m_localFilter);
     m_localView->setAcceptedSource(reinterpret_cast<quintptr>(m_remoteModel));
     m_localView->setRootIsDecorated(false);
     m_localView->setItemsExpandable(false);
@@ -582,7 +625,8 @@ QWidget *FileBrowserPane::createLocalSection()
         setLocalFolder(m_localPathEdit->text().trimmed());
     });
     connect(m_localView, &QTreeView::doubleClicked, this, [this](const QModelIndex &index) {
-        if (m_localModel->isDir(index)) setLocalFolder(m_localModel->filePath(index));
+        QModelIndex source = m_localFilter->mapToSource(index);
+        if (m_localModel->isDir(source)) setLocalFolder(m_localModel->filePath(source));
     });
     connect(m_localView, &LocalDropView::remoteEntriesDropped, this, &FileBrowserPane::downloadEntries);
     connect(m_localView, &QTreeView::customContextMenuRequested,
@@ -594,7 +638,7 @@ QWidget *FileBrowserPane::createLocalSection()
     connect(editAction, &QAction::triggered, this, [this]() {
         QModelIndexList rows = m_localView->selectionModel()->selectedRows();
         if (rows.size() != 1) return;
-        QString path = m_localModel->filePath(rows.first());
+        QString path = m_localModel->filePath(m_localFilter->mapToSource(rows.first()));
         if (QFileInfo(path).isFile()) openInEditor(path);
     });
     m_localView->addAction(editAction);
@@ -799,7 +843,7 @@ void FileBrowserPane::showLocalContextMenu(const QPoint &pos)
 {
     QStringList paths;
     for (const QModelIndex &index : m_localView->selectionModel()->selectedRows()) {
-        paths << m_localModel->filePath(index);
+        paths << m_localModel->filePath(m_localFilter->mapToSource(index));
     }
 
     QMenu menu(this);
@@ -840,7 +884,9 @@ void FileBrowserPane::setLocalFolder(const QString &path)
         return;
     }
     QString absolute = info.absoluteFilePath();
-    m_localView->setRootIndex(m_localModel->setRootPath(absolute));
+    QModelIndex root = m_localModel->setRootPath(absolute);
+    m_localFilter->refilter();  // The root's own folders always pass
+    m_localView->setRootIndex(m_localFilter->mapFromSource(root));
     m_localPathEdit->setText(QDir::toNativeSeparators(absolute));
 }
 
