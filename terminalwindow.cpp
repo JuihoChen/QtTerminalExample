@@ -1,5 +1,6 @@
 // ============ Updated terminalwindow.cpp with Split Left Pane ============
 #include "terminalwindow.h"
+#include "inwindowdialog.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -45,8 +46,8 @@ void TerminalWindow::closeEvent(QCloseEvent *event)
         message = "Close terminal?";
     }
     
-    int ret = QMessageBox::question(this, "Close Terminal", message,
-                                  QMessageBox::Yes | QMessageBox::No);
+    int ret = InWindowDialog::question(this, "Close Terminal", message,
+                                       QMessageBox::Yes | QMessageBox::No);
     if (ret == QMessageBox::No) {
         event->ignore();
         return;

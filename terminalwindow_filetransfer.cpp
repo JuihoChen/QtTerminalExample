@@ -3,6 +3,7 @@
 #include "commandsafety.h"
 #include "ssherrorhandler.h"
 #include "connectionvalidator.h"
+#include "inwindowdialog.h"
 
 #include <QFileDialog>
 #include <QInputDialog>
@@ -55,7 +56,7 @@ void TerminalWindow::uploadFileToSSH(const SSHConnection &connection)
         QString dialogLabel = QString("Remote path (current directory: %1):")
                              .arg(remotePath);
         
-        QString finalRemotePath = QInputDialog::getText(this, dialogTitle, dialogLabel,
+        QString finalRemotePath = InWindowDialog::getText(this, dialogTitle, dialogLabel,
             QLineEdit::Normal, defaultRemotePath, &ok);
         
         if (!ok || finalRemotePath.isEmpty()) return;
@@ -72,16 +73,16 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection,
     // Validate connection first
     auto validation = ConnectionValidator::validateConnection(connection);
     if (!validation.isValid) {
-        QMessageBox::warning(this, "Invalid Connection", validation.errorMessage);
+        InWindowDialog::warning(this, "Invalid Connection", validation.errorMessage);
         return;
     }
     
     // Show warnings if any
     if (!validation.warnings.isEmpty()) {
         QString warningText = "Warnings:\n" + validation.warnings.join("\n");
-        int ret = QMessageBox::question(this, "Connection Warnings", 
-                                       warningText + "\n\nContinue anyway?",
-                                       QMessageBox::Yes | QMessageBox::No);
+        int ret = InWindowDialog::question(this, "Connection Warnings", 
+                                          warningText + "\n\nContinue anyway?",
+                                          QMessageBox::Yes | QMessageBox::No);
         if (ret == QMessageBox::No) return;
     }
     
@@ -105,14 +106,14 @@ void TerminalWindow::performSCPUpload(const SSHConnection &connection,
         
         if (exitCode == 0) {
             statusBar()->showMessage(QString("✅ File uploaded successfully to %1").arg(connection.name), 5000);
-            QMessageBox::information(this, "Upload Complete", 
+            InWindowDialog::information(this, "Upload Complete", 
                 QString("File '%1' uploaded successfully to %2")
                 .arg(QFileInfo(localFile).fileName(), connection.name));
         } else {
             QString error = scpProcess->readAllStandardError();
             QString friendlyError = SSHErrorHandler::getErrorDescription(exitCode);
             statusBar()->showMessage("❌ Upload failed", 5000);
-            QMessageBox::warning(this, "Upload Failed", 
+            InWindowDialog::warning(this, "Upload Failed", 
                 QString("Failed to upload file to %1:\n%2\n\nTechnical details:\n%3")
                 .arg(connection.name, friendlyError, error));
         }

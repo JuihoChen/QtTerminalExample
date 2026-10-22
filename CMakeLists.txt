@@ -38,6 +38,7 @@ add_executable(QtTerminalExample
     hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
+    inwindowdialog.cpp
     resources.qrc
     ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.cpp
 )
