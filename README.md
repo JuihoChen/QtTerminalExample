@@ -246,8 +246,17 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 ```
 - "Qt Terminal SSH Manager (Ubuntu)" then shows up in the Windows Start menu with the app icon, usually within a few seconds (run `wsl --shutdown` from Windows and reopen WSL if it doesn't). Use `/usr/share/applications` rather than `/usr/local/share/applications`: the latter often doesn't exist on WSL, and WSLg only notices it if it existed when WSL started.
 - For a Windows desktop shortcut, right-click the Start menu entry, choose **Open file location**, and copy the shortcut from that folder to your desktop. A shortcut made before the icon was set keeps its old icon, so delete it and copy it again.
-- The running window's taskbar icon comes from the same launcher, matched by its file name `qt-terminal.desktop`, so keep that name.
+- The running window's taskbar icon comes from the same launcher, matched by its file name `qt-terminal.desktop`, so keep that name. This needs Qt's Wayland plugin (`sudo apt install qtwayland5`); without it the app falls back to X11 and the taskbar shows a plain penguin. Restart the app after changing either.
 - Shortcuts that WSLg makes carry a small penguin on the icon. For a desktop shortcut without it, run `./wsl-desktop-shortcut.sh` from the project folder (after building). It puts "Qt Terminal SSH Manager" on your Windows desktop, starting the program through `wslg.exe` with `icons/qtterminal.ico`, and keeps a copy of the icon in `%LOCALAPPDATA%\QtTerminal`. Pass the program's path if it isn't `build/QtTerminalExample`; the path must not contain spaces.
+- To drop the penguin badge from the Start menu entry and the taskbar as well, turn it off in WSLg's settings file, `%USERPROFILE%\.wslgconfig` (this applies to all Linux apps), then run `wsl --shutdown` from Windows and reopen WSL:
+  ```bash
+  WINHOME=$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")
+  cat >> "$WINHOME/.wslgconfig" << 'EOF'
+  [system-distro-env]
+  WESTON_RDPRAIL_SHELL_BLEND_OVERLAY_ICON_TASKBAR=false
+  WESTON_RDPRAIL_SHELL_BLEND_OVERLAY_ICON_APPLIST=false
+  EOF
+  ```
 
 ## Usage Guide
 
