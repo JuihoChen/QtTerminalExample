@@ -229,8 +229,7 @@ void TerminalWindow::setupConnectionConfigPanel()
 }
 
 void TerminalWindow::showAbout() {
-    AboutDialog dialog(this);
-    dialog.exec();
+    AboutDialog::showFor(this);
 }
 
 void TerminalWindow::updateStatusBar()
