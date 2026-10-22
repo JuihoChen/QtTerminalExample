@@ -25,6 +25,10 @@ int main(int argc, char *argv[])
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
     app.setApplicationVersion(APP_VERSION);
+    // Matches the qt-terminal.desktop launcher from the README. On Wayland
+    // (and WSLg's Windows taskbar) the window is matched to its launcher, and
+    // so to its icon, by this name rather than by the window icon set below.
+    app.setDesktopFileName("qt-terminal");
 
     // Register the custom type for QVariant system (Feature 4)
     qRegisterMetaType<SSHConnection>("SSHConnection");
