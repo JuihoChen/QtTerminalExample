@@ -2,6 +2,7 @@
 #include "terminalwindow.h"
 #include "connectiondialog.h"
 #include "hostscantab.h"
+#include "inwindowdialog.h"
 
 #include <QMessageBox>
 #include <QTreeWidgetItem>
@@ -137,7 +138,7 @@ void TerminalWindow::setAsideDamagedConnectionsFile(const QString &reason)
 
     // Show it once the window is up; this can run from the constructor
     QTimer::singleShot(0, this, [this, message]() {
-        QMessageBox::warning(this, "Connections File Damaged", message);
+        InWindowDialog::warning(this, "Connections File Damaged", message);
     });
 }
 
@@ -306,12 +307,12 @@ void TerminalWindow::addNewConnection()
     ConnectionDialog dialog(this);
     dialog.setAvailableFolders(getExistingFolders());
     
-    if (dialog.exec() == QDialog::Accepted) {
+    if (InWindowDialog::exec(&dialog) == QDialog::Accepted) {
         SSHConnection newConnection = dialog.getConnection();
         
         // Check if connection already exists
         if (connectionExists(newConnection)) {
-            QMessageBox::warning(this, "Duplicate Connection", 
+            InWindowDialog::warning(this, "Duplicate Connection", 
                 "A connection with this name already exists in the same folder.");
             return;
         }
@@ -333,7 +334,7 @@ void TerminalWindow::editConnection(QTreeWidgetItem *item)
     // Get connection index
     int connectionIndex = item->data(0, Qt::UserRole + 1).toInt();
     if (connectionIndex < 0 || connectionIndex >= connections.size()) {
-        QMessageBox::warning(this, "Error", "Connection not found.");
+        InWindowDialog::warning(this, "Error", "Connection not found.");
         return;
     }
     
@@ -342,12 +343,12 @@ void TerminalWindow::editConnection(QTreeWidgetItem *item)
     ConnectionDialog dialog(originalConnection, this);
     dialog.setAvailableFolders(getExistingFolders());
     
-    if (dialog.exec() == QDialog::Accepted) {
+    if (InWindowDialog::exec(&dialog) == QDialog::Accepted) {
         SSHConnection editedConnection = dialog.getConnection();
         
         // Check if the edited connection conflicts with existing ones (excluding the current one)
         if (connectionExists(editedConnection, connectionIndex)) {
-            QMessageBox::warning(this, "Duplicate Connection", 
+            InWindowDialog::warning(this, "Duplicate Connection", 
                 "A connection with this name already exists in the same folder.");
             return;
         }
@@ -369,13 +370,13 @@ void TerminalWindow::deleteConnection(QTreeWidgetItem *item)
     // Get connection index
     int connectionIndex = item->data(0, Qt::UserRole + 1).toInt();
     if (connectionIndex < 0 || connectionIndex >= connections.size()) {
-        QMessageBox::warning(this, "Error", "Connection not found.");
+        InWindowDialog::warning(this, "Error", "Connection not found.");
         return;
     }
     
     SSHConnection connection = connections[connectionIndex];
     
-    int ret = QMessageBox::question(this, "Delete Connection",
+    int ret = InWindowDialog::question(this, "Delete Connection",
         QString("Are you sure you want to delete the connection '%1'?").arg(connection.name),
         QMessageBox::Yes | QMessageBox::No);
     
@@ -439,12 +440,12 @@ void TerminalWindow::addConnectionToFolder(const QString &folderName)
     dialog.setWindowTitle("New Connection in " + folderName);
     dialog.setAvailableFolders(getExistingFolders());
     
-    if (dialog.exec() == QDialog::Accepted) {
+    if (InWindowDialog::exec(&dialog) == QDialog::Accepted) {
         SSHConnection newConnection = dialog.getConnection();
         
         // Check if connection already exists
         if (connectionExists(newConnection)) {
-            QMessageBox::warning(this, "Duplicate Connection", 
+            InWindowDialog::warning(this, "Duplicate Connection", 
                 "A connection with this name already exists in the same folder.");
             return;
         }

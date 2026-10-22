@@ -16,21 +16,13 @@ public:
     explicit AboutDialog(QWidget *parent = nullptr);
 
     // Shows the dialog modally over window: as its own window normally, but
-    // as a panel inside window under WSLg (see AboutDialog.cpp)
+    // as a panel inside window under WSLg (see inwindowdialog.h)
     static void showFor(QWidget *window);
-
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void setupUI();
-    void execInside(QWidget *window);
-    void centerInBackdrop();
-    bool isOwnWidget(QObject *object) const;
 
     QPushButton *m_closeButton = nullptr;
-    QWidget *m_host = nullptr;
-    QWidget *m_backdrop = nullptr;
 };
 
 #endif // ABOUTDIALOG_H

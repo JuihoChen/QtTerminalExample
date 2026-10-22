@@ -1,6 +1,7 @@
 // ============ Updated connectiondialog.cpp with Password Field ============
 #include "connectiondialog.h"
 #include "terminalwindow.h"
+#include "inwindowdialog.h"
 
 #include <QFormLayout>
 #include <QVBoxLayout>
@@ -272,7 +273,7 @@ void ConnectionDialog::onCheckIdentityFile()
     QProcess process;
     process.start("ssh-keygen", QStringList() << "-l" << "-f" << keyFile);
     if (!process.waitForStarted(3000)) {
-        QMessageBox::warning(this, "Check Key", "Could not run ssh-keygen. Is OpenSSH installed?");
+        InWindowDialog::warning(this, "Check Key", "Could not run ssh-keygen. Is OpenSSH installed?");
         return;
     }
     process.waitForFinished(5000);
@@ -281,10 +282,10 @@ void ConnectionDialog::onCheckIdentityFile()
     QString errors = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
     
     if (process.exitCode() == 0 && !output.isEmpty()) {
-        QMessageBox::information(this, "Check Key",
+        InWindowDialog::information(this, "Check Key",
             QString("✅ Valid key\n\n%1").arg(output));
     } else {
-        QMessageBox::warning(this, "Check Key",
+        InWindowDialog::warning(this, "Check Key",
             QString("❌ Not a usable SSH key:\n\n%1").arg(errors.isEmpty() ? keyFile : errors));
     }
 }
@@ -357,7 +358,7 @@ void ConnectionDialog::onTestConnection()
 {
     QString host = hostEdit->text().trimmed();
     if (host.isEmpty()) {
-        QMessageBox::warning(this, "Test Connection", "Please enter a host first.");
+        InWindowDialog::warning(this, "Test Connection", "Please enter a host first.");
         return;
     }
     
@@ -378,12 +379,12 @@ void ConnectionDialog::onTestConnection()
                 progress->deleteLater();
                 
                 if (exitCode == 0) {
-                    QMessageBox::information(this, "Test Connection", 
+                    InWindowDialog::information(this, "Test Connection", 
                         QString("✅ Host %1 is reachable!\n\n"
                                 "Note: This only tests network connectivity.\n"
                                 "SSH service availability is not verified.").arg(host));
                 } else {
-                    QMessageBox::warning(this, "Test Connection",
+                    InWindowDialog::warning(this, "Test Connection",
                         QString("❌ Host %1 is not reachable.\n\n"
                                 "Please check:\n"
                                 "• Host address is correct\n"

@@ -1,6 +1,7 @@
 // WinSCP-style file browser pane for one SSH connection
 #include "filebrowserpane.h"
 #include "remotefilemodel.h"
+#include "inwindowdialog.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -923,7 +924,7 @@ void FileBrowserPane::downloadEntries(const QVector<RemoteEntry> &entries, const
     if (!existing.isEmpty()) {
         QString list = existing.mid(0, 8).join("\n");
         if (existing.size() > 8) list += QString("\n... and %1 more").arg(existing.size() - 8);
-        int answer = QMessageBox::question(this, "Replace Files?",
+        int answer = InWindowDialog::question(this, "Replace Files?",
             QString("These already exist in %1:\n\n%2\n\nReplace them?")
                 .arg(QDir::toNativeSeparators(localDir), list),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -958,7 +959,7 @@ void FileBrowserPane::uploadPaths(const QStringList &localPaths, const QString &
         if (!existing.isEmpty()) {
             QString list = existing.mid(0, 8).join("\n");
             if (existing.size() > 8) list += QString("\n... and %1 more").arg(existing.size() - 8);
-            int answer = QMessageBox::question(this, "Replace Files?",
+            int answer = InWindowDialog::question(this, "Replace Files?",
                 QString("These already exist in %1 on the server:\n\n%2\n\n"
                         "Replace them? Folders are merged.").arg(remoteDir, list),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -1146,8 +1147,8 @@ QString FileBrowserPane::newLocalCopyPath(const QString &name)
     if (!m_editDir) {
         m_editDir = new QTemporaryDir(QDir::temp().filePath("qtterminal-edit-XXXXXX"));
         if (!m_editDir->isValid()) {
-            QMessageBox::warning(this, "Edit", QString("Could not create a temporary folder: %1")
-                                                   .arg(m_editDir->errorString()));
+            InWindowDialog::warning(this, "Edit", QString("Could not create a temporary folder: %1")
+                                                      .arg(m_editDir->errorString()));
             delete m_editDir;
             m_editDir = nullptr;
             return QString();
@@ -1164,7 +1165,7 @@ bool FileBrowserPane::chooseEditor()
 {
     bool ok = false;
     QString current = QSettings().value(kEditorSetting).toString();
-    QString command = QInputDialog::getText(this, "Choose Editor",
+    QString command = InWindowDialog::getText(this, "Choose Editor",
         "Command that opens a file for editing, such as gedit, kate, code,\n"
         "or \"xterm -e vim\". Leave it empty to use the system's default application.",
         QLineEdit::Normal, current, &ok);
@@ -1178,7 +1179,7 @@ void FileBrowserPane::openInEditor(const QString &localPath)
     QString command = QSettings().value(kEditorSetting).toString().trimmed();
     if (command.isEmpty()) {
         if (QDesktopServices::openUrl(QUrl::fromLocalFile(localPath))) return;
-        QMessageBox::information(this, "Edit",
+        InWindowDialog::information(this, "Edit",
             "No application is set up to open this kind of file. Choose an editor to use.");
         if (chooseEditor() && !QSettings().value(kEditorSetting).toString().trimmed().isEmpty()) {
             openInEditor(localPath);
@@ -1190,8 +1191,8 @@ void FileBrowserPane::openInEditor(const QString &localPath)
     QString program = args.takeFirst();
     args << localPath;
     if (!QProcess::startDetached(program, args)) {
-        QMessageBox::warning(this, "Edit", QString("Could not start \"%1\". Choose another "
-                                                   "editor with Edit With...").arg(command));
+        InWindowDialog::warning(this, "Edit", QString("Could not start \"%1\". Choose another "
+                                                      "editor with Edit With...").arg(command));
     }
 }
 
@@ -1294,7 +1295,7 @@ void FileBrowserPane::showTransferDetails(QTreeWidgetItem *item)
     box.setInformativeText(lines.mid(0, 5).join('\n')
                            + (lines.size() > 5 ? "\n..." : QString()));
     box.setDetailedText(details);
-    box.exec();
+    InWindowDialog::exec(&box);
 }
 
 void FileBrowserPane::showTransferContextMenu(const QPoint &pos)

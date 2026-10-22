@@ -2,6 +2,7 @@
 #include "hostscantab.h"
 #include "commandsafety.h"
 #include "sftpworker.h"
+#include "inwindowdialog.h"
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -384,18 +385,18 @@ void HostScanTab::startScan()
 {
     quint32 start = 0, end = 0;
     if (!parseIPv4(m_startEdit->text().trimmed(), &start)) {
-        QMessageBox::warning(this, "Scan", "Enter a start IP address such as 192.168.1.1.");
+        InWindowDialog::warning(this, "Scan", "Enter a start IP address such as 192.168.1.1.");
         m_startEdit->setFocus();
         return;
     }
     if (!parseIPv4(m_endEdit->text().trimmed(), &end)) {
-        QMessageBox::warning(this, "Scan", "Enter an end IP address such as 192.168.1.254.");
+        InWindowDialog::warning(this, "Scan", "Enter an end IP address such as 192.168.1.254.");
         m_endEdit->setFocus();
         return;
     }
     if (end < start) qSwap(start, end);
     if (end - start >= kMaxAddresses) {
-        QMessageBox::warning(this, "Scan",
+        InWindowDialog::warning(this, "Scan",
             QString("That range has %1 addresses. Scan at most %2 at a time (a /20).")
                 .arg(qulonglong(end) - start + 1).arg(kMaxAddresses));
         return;
