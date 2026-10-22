@@ -211,7 +211,7 @@ From the `build` folder:
 ```
 
 ### Desktop Shortcut (Optional)
-Run this from the `build` folder after building. It adds "Qt Terminal SSH Manager" to your app menu with the app's own icon (the build copies `qtterminal.svg` next to the program), so it stands apart from the regular terminal, and puts a launcher on your desktop:
+Run this from the `build` folder after building. It adds "Qt Terminal SSH Manager" to your app menu with the app's own icon (the build copies `qtterminal.png` next to the program), so it stands apart from the regular terminal, and puts a launcher on your desktop:
 ```bash
 BIN="$PWD/QtTerminalExample"
 mkdir -p ~/.local/share/applications
@@ -221,7 +221,7 @@ Name=Qt Terminal SSH Manager
 Comment=Terminal with SSH Connection Management
 Exec=$BIN
 Path=$(dirname "$BIN")
-Icon=$(dirname "$BIN")/qtterminal.svg
+Icon=$(dirname "$BIN")/qtterminal.png
 Type=Application
 Terminal=false
 Categories=System;TerminalEmulator;
@@ -239,6 +239,14 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 - `StartupWMClass=QtTerminal` matches the app's window class, so the dock groups the running window with the launcher instead of showing a second, generic icon. If you pinned an older launcher, unpin it and pin the app again from the menu.
 - To use a theme icon instead, set `Icon=` to a name such as `network-server`, `network-workgroup` or `utilities-system-monitor`.
 - If you move or rebuild the project in a different folder, run the commands again so `Exec` points at the new location.
+
+**WSL (WSLg):** Windows builds its Start menu entries, and their icons, only from launchers in `/usr/share/applications` and `/usr/local/share/applications`. It doesn't look in `~/.local/share/applications`, so after the commands above also run:
+```bash
+sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
+```
+- "Qt Terminal SSH Manager (Ubuntu)" then shows up in the Windows Start menu with the app icon, usually within a few seconds (run `wsl --shutdown` from Windows and reopen WSL if it doesn't). Use `/usr/share/applications` rather than `/usr/local/share/applications`: the latter often doesn't exist on WSL, and WSLg only notices it if it existed when WSL started.
+- For a Windows desktop shortcut, right-click the Start menu entry, choose **Open file location**, and copy the shortcut from that folder to your desktop. A shortcut made before the icon was set keeps its old icon, so delete it and copy it again.
+- The running window's taskbar icon comes from the same launcher, matched by its file name `qt-terminal.desktop`, so keep that name.
 
 ## Usage Guide
 

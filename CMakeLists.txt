@@ -124,11 +124,15 @@ if(USE_STATIC_QTERMWIDGET)
     )
 endif()
 
-# A copy of the app icon next to the executable, for the desktop launcher's Icon=
+# Copies of the app icon next to the executable, for the desktop launcher's
+# Icon=. The PNG is what the README uses: every desktop, WSLg included, reads it.
 add_custom_command(TARGET QtTerminalExample POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/icons/qtterminal.svg"
         "$<TARGET_FILE_DIR:QtTerminalExample>/qtterminal.svg"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/icons/qtterminal-256.png"
+        "$<TARGET_FILE_DIR:QtTerminalExample>/qtterminal.png"
 )
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
