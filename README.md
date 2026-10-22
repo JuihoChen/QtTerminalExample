@@ -242,9 +242,9 @@ gio set ~/Desktop/qt-terminal.desktop metadata::trusted true 2>/dev/null
 
 **WSL (WSLg):** Windows builds its Start menu entries, and their icons, only from launchers in `/usr/share/applications` and `/usr/local/share/applications`. It doesn't look in `~/.local/share/applications`, so after the commands above also run:
 ```bash
-sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/local/share/applications/
+sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 ```
-- "Qt Terminal SSH Manager (Ubuntu)" then shows up in the Windows Start menu with the app icon, usually within a few seconds (run `wsl --shutdown` from Windows and reopen WSL if it doesn't).
+- "Qt Terminal SSH Manager (Ubuntu)" then shows up in the Windows Start menu with the app icon, usually within a few seconds (run `wsl --shutdown` from Windows and reopen WSL if it doesn't). Use `/usr/share/applications` rather than `/usr/local/share/applications`: the latter often doesn't exist on WSL, and WSLg only notices it if it existed when WSL started.
 - For a Windows desktop shortcut, right-click the Start menu entry, choose **Open file location**, and copy the shortcut from that folder to your desktop. A shortcut made before the icon was set keeps its old icon, so delete it and copy it again.
 - The running window's taskbar icon comes from the same launcher, matched by its file name `qt-terminal.desktop`, so keep that name.
 
