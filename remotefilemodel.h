@@ -5,6 +5,8 @@
 #include <QSortFilterProxyModel>
 #include <QCollator>
 #include <QFileIconProvider>
+#include <QHash>
+#include <QIcon>
 
 #include "sftpworker.h"
 
@@ -43,9 +45,12 @@ public:
     Qt::DropActions supportedDragActions() const override;
 
 private:
+    QIcon fileIcon(const QString &name) const;
+
     QString m_path;
     QVector<RemoteEntry> m_entries;
     QFileIconProvider m_icons;
+    mutable QHash<QString, QIcon> m_iconCache;  // By MIME type name
 };
 
 // Keeps ".." on top and folders above files, whichever way a column sorts,
