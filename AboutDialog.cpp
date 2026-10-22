@@ -2,8 +2,10 @@
 #include "buildinfo.h"
 
 #include <QApplication>
+#include <QEventLoop>
 #include <QFrame>
 #include <QIcon>
+#include <QPointer>
 
 AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("About Qt Terminal Example");
@@ -95,15 +97,107 @@ void AboutDialog::setupUI() {
     mainLayout->addSpacing(14);
 
     // Close button
-    QPushButton* closeButton = new QPushButton("Close");
-    closeButton->setFixedWidth(80);
-    closeButton->setDefault(true);
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    m_closeButton = new QPushButton("Close");
+    m_closeButton->setFixedWidth(80);
+    m_closeButton->setDefault(true);
+    connect(m_closeButton, &QPushButton::clicked, this, &QDialog::accept);
 
     QHBoxLayout* buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch();
-    buttonLayout->addWidget(closeButton);
+    buttonLayout->addWidget(m_closeButton);
     buttonLayout->addStretch();
 
     mainLayout->addLayout(buttonLayout);
+}
+
+void AboutDialog::showFor(QWidget *window) {
+    AboutDialog dialog(window);
+    // WSLg turns each Wayland window into a separate Windows window and
+    // doesn't keep a dialog above the window that opened it, so clicking the
+    // main window hides the dialog behind it. Show it inside the main window
+    // there instead; everywhere else it stays a normal dialog window.
+    bool wslg = QGuiApplication::platformName() == "wayland"
+                && !qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME");
+    if (wslg && window)
+        dialog.execInside(window->window());
+    else
+        dialog.exec();
+}
+
+void AboutDialog::execInside(QWidget *window) {
+    QPointer<QWidget> previousFocus = window->focusWidget();
+
+    // A dimmed backdrop over the whole window takes the clicks meant for it
+    QWidget backdrop(window);
+    backdrop.setObjectName("aboutBackdrop");
+    backdrop.setAttribute(Qt::WA_StyledBackground);
+    backdrop.setStyleSheet("#aboutBackdrop { background: rgba(0, 0, 0, 90); }");
+    backdrop.setGeometry(window->rect());
+
+    setParent(&backdrop, Qt::Widget);
+    setObjectName("aboutPanel");
+    setAttribute(Qt::WA_StyledBackground);
+    setStyleSheet("#aboutPanel { background: palette(window);"
+                  " border: 1px solid rgba(0, 0, 0, 0.35); border-radius: 8px; }");
+    m_host = window;
+    m_backdrop = &backdrop;
+    adjustSize();
+    centerInBackdrop();
+
+    backdrop.show();
+    backdrop.raise();
+    show();
+    m_closeButton->setFocus();
+
+    // Keys and shortcuts meant for the main window are dropped while open
+    qApp->installEventFilter(this);
+    QEventLoop loop;
+    connect(this, &QDialog::finished, &loop, &QEventLoop::quit);
+    loop.exec(QEventLoop::DialogExec);
+    qApp->removeEventFilter(this);
+
+    // The backdrop is about to be destroyed; it must not take this dialog along
+    hide();
+    setParent(nullptr);
+    m_host = nullptr;
+    m_backdrop = nullptr;
+    if (previousFocus)
+        previousFocus->setFocus();
+}
+
+void AboutDialog::centerInBackdrop() {
+    move((m_backdrop->width() - width()) / 2, (m_backdrop->height() - height()) / 2);
+}
+
+bool AboutDialog::isOwnWidget(QObject *object) const {
+    QWidget *widget = qobject_cast<QWidget*>(object);
+    return widget && (widget == this || isAncestorOf(widget));
+}
+
+bool AboutDialog::eventFilter(QObject *watched, QEvent *event) {
+    switch (event->type()) {
+    case QEvent::Resize:
+        if (watched == m_host) {
+            m_backdrop->setGeometry(m_host->rect());
+            centerInBackdrop();
+        }
+        break;
+    case QEvent::Shortcut:
+        return true;
+    case QEvent::KeyPress:
+    case QEvent::KeyRelease:
+    case QEvent::ShortcutOverride:
+        // Key events reach the QWindow first and then the focused widget;
+        // only drop the ones addressed to widgets outside this panel
+        if (qobject_cast<QWidget*>(watched) && !isOwnWidget(watched))
+            return true;
+        break;
+    case QEvent::FocusIn:
+        if (qobject_cast<QWidget*>(watched) && !isOwnWidget(watched))
+            m_closeButton->setFocus();
+        break;
+    default:
+        break;
+    }
+    return QDialog::eventFilter(watched, event);
 }
