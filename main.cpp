@@ -1,7 +1,38 @@
 // ============ Updated main.cpp with Feature 4 ============
 #include <QApplication>
+#include <QLabel>
+#include <QMessageBox>
 #include "terminalwindow.h"
 #include "sftpworker.h"
+
+// WSLg gives every window a Windows title bar with minimize, maximize and
+// close buttons and adds " (<distro>)" to the title, so a narrow message box
+// shows only part of its title ("Close Term..."). Widen message boxes there
+// until the title fits.
+class WslMessageBoxWidener : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::Show)
+            return false;
+        QMessageBox *box = qobject_cast<QMessageBox*>(watched);
+        QLabel *label = box ? box->findChild<QLabel*>("qt_msgbox_label") : nullptr;
+        if (!label)
+            return false;
+        QString title = QString("%1 (%2)").arg(box->windowTitle(),
+                                               qEnvironmentVariable("WSL_DISTRO_NAME"));
+        // About 180 px for the Windows title bar's icon and three buttons,
+        // less about 80 px of the box that isn't the text label
+        int width = box->fontMetrics().horizontalAdvance(title) + 180 - 80;
+        if (label->minimumWidth() < width)
+            label->setMinimumWidth(width);
+        return false;
+    }
+};
 
 int main(int argc, char *argv[])
 {
@@ -25,6 +56,8 @@ int main(int argc, char *argv[])
     app.setOrganizationName("MyCompany");
     app.setApplicationName("QtTerminal");
     app.setApplicationVersion(APP_VERSION);
+    if (!qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME"))
+        app.installEventFilter(new WslMessageBoxWidener(&app));
     // Matches the qt-terminal.desktop launcher from the README. On Wayland
     // (and WSLg's Windows taskbar) the window is matched to its launcher, and
     // so to its icon, by this name rather than by the window icon set below.
