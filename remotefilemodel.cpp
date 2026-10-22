@@ -6,6 +6,7 @@
 #include <QDataStream>
 #include <QLocale>
 #include <QMimeData>
+#include <QMimeDatabase>
 #include <QSet>
 
 RemoteFileModel::RemoteFileModel(QObject *parent)
@@ -37,6 +38,21 @@ void RemoteFileModel::setEntries(const QString &path, const QVector<RemoteEntry>
     endResetModel();
 }
 
+// The icon the local list would show for a file of this name: picked by its
+// extension, since the contents are on the server
+QIcon RemoteFileModel::fileIcon(const QString &name) const
+{
+    QMimeType type = QMimeDatabase().mimeTypeForFile(name, QMimeDatabase::MatchExtension);
+    auto it = m_iconCache.constFind(type.name());
+    if (it != m_iconCache.constEnd()) return *it;
+
+    QIcon icon = QIcon::fromTheme(type.iconName());
+    if (icon.isNull()) icon = QIcon::fromTheme(type.genericIconName());
+    if (icon.isNull()) icon = m_icons.icon(QFileIconProvider::File);
+    m_iconCache.insert(type.name(), icon);
+    return icon;
+}
+
 RemoteEntry RemoteFileModel::entry(const QModelIndex &index) const
 {
     if (!index.isValid() || index.row() >= m_entries.size()) return RemoteEntry();
@@ -65,7 +81,7 @@ QVariant RemoteFileModel::data(const QModelIndex &index, int role) const
     case NameColumn:
         if (role == Qt::DisplayRole || role == SortRole) return e.name;
         if (role == Qt::DecorationRole) {
-            return m_icons.icon(e.isDir ? QFileIconProvider::Folder : QFileIconProvider::File);
+            return e.isDir ? m_icons.icon(QFileIconProvider::Folder) : fileIcon(e.name);
         }
         if (role == Qt::ToolTipRole && !up) {
             return e.isLink ? QString("%1 (link)").arg(e.path) : e.path;

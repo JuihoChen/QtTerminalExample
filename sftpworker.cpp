@@ -15,6 +15,8 @@
 #include <libssh/sftp.h>
 
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -82,6 +84,25 @@ bool authenticateWithDefaultKeys(ssh_session session)
         if (rc == SSH_AUTH_ERROR) return false;
     }
     return false;
+}
+
+// TCP keepalives on a connection left open between requests. Firewalls and
+// routers forget a connection that stays quiet (Google Cloud's after 10
+// minutes) and then drop its packets, so the next transfer would hang until
+// the stall watchdog cut it off. Keepalives every minute keep it known, and
+// make a connection that died anyway fail fast instead of hanging.
+void keepAlive(int fd)
+{
+    int on = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof on);
+#ifdef TCP_KEEPIDLE
+    int idle = 60;
+    int interval = 20;
+    int count = 3;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle);
+    ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof interval);
+    ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof count);
+#endif
 }
 
 struct PendingFile {
@@ -397,6 +418,7 @@ bool SftpWorker::connectSession(QString *error)
 
     QMutexLocker lock(&m_socketMutex);
     m_socket = ssh_get_fd(m_session);
+    keepAlive(m_socket);
     // An abort that came just before the socket was known would be lost
     if (m_aborted) {
         *error = "Cancelled.";
@@ -646,22 +668,21 @@ void SftpWorker::download(int jobId, const RemoteEntry &entry, const QString &lo
         return;
     }
 
-    quint64 done = 0;
-    m_progressTimer.start();
-    emit transferProgress(jobId, 0, entry.isDir ? 0 : entry.size);
-    bool ok;
     QStringList skipped;
-    if (entry.isDir) {
-        ok = downloadTree(jobId, entry, localPath, &done, &skipped, &error);
-    } else if (entry.isSpecial) {
-        ok = false;
-        error = "Not a regular file (a pipe, socket or device), so it can't be copied";
-    } else {
-        ok = downloadFile(jobId, entry, localPath, &done, entry.size, &error);
-    }
-    if (!ok && ssh_is_connected(m_session) == 0) {
-        disconnectFromServer();  // Reconnect for the next transfer
-    }
+    auto attempt = [&]() {
+        quint64 done = 0;
+        skipped.clear();
+        error.clear();
+        m_progressTimer.start();
+        emit transferProgress(jobId, 0, entry.isDir ? 0 : entry.size);
+        if (entry.isDir) return downloadTree(jobId, entry, localPath, &done, &skipped, &error);
+        if (entry.isSpecial) {
+            error = "Not a regular file (a pipe, socket or device), so it can't be copied";
+            return false;
+        }
+        return downloadFile(jobId, entry, localPath, &done, entry.size, &error);
+    };
+    bool ok = attempt() || retryOnFreshConnection(jobId, attempt, &error);
     emit transferFinished(jobId, ok, ok ? skipped.join('\n') : error);
 }
 
@@ -679,20 +700,39 @@ void SftpWorker::upload(int jobId, const QString &localPath, const QString &remo
     }
 
     QFileInfo info(localPath);
-    quint64 done = 0;
-    m_progressTimer.start();
-    emit transferProgress(jobId, 0, info.isDir() ? 0 : quint64(info.size()));
-    bool ok;
     QStringList skipped;
-    if (info.isDir()) {
-        ok = uploadTree(jobId, localPath, remotePath, &done, &skipped, &error);
-    } else {
-        ok = uploadFile(jobId, localPath, remotePath, &done, quint64(info.size()), &error);
-    }
-    if (!ok && ssh_is_connected(m_session) == 0) {
-        disconnectFromServer();
-    }
+    auto attempt = [&]() {
+        quint64 done = 0;
+        skipped.clear();
+        error.clear();
+        m_progressTimer.start();
+        emit transferProgress(jobId, 0, info.isDir() ? 0 : quint64(info.size()));
+        if (info.isDir()) return uploadTree(jobId, localPath, remotePath, &done, &skipped, &error);
+        return uploadFile(jobId, localPath, remotePath, &done, quint64(info.size()), &error);
+    };
+    bool ok = attempt() || retryOnFreshConnection(jobId, attempt, &error);
     emit transferFinished(jobId, ok, ok ? skipped.join('\n') : error);
+}
+
+// After a transfer failed: when the connection had dropped (a server or
+// firewall that closed it while idle), reconnects and runs the transfer once
+// more, like a listing does. Not after a cancel, or when the UI cut the
+// connection because the server stopped answering.
+bool SftpWorker::retryOnFreshConnection(int jobId, const std::function<bool()> &attempt,
+                                        QString *error)
+{
+    if (ssh_is_connected(m_session) != 0) return false;
+    disconnectFromServer();  // Reconnect for this or the next transfer
+    if (isCancelled(jobId) || wasAborted()) return false;
+
+    QString firstError = *error;
+    if (!ensureConnected(error)) {
+        *error = firstError + "\n\nReconnecting failed too:\n" + *error;
+        return false;
+    }
+    if (attempt()) return true;
+    if (ssh_is_connected(m_session) == 0) disconnectFromServer();
+    return false;
 }
 
 // Progress at most ten times a second, so a fast link doesn't flood the UI

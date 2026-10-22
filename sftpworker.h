@@ -10,6 +10,8 @@
 #include <QElapsedTimer>
 #include <QMetaType>
 
+#include <functional>
+
 #include "sshconnection.h"
 
 // libssh types, kept out of this header so only sftpworker.cpp needs libssh
@@ -114,6 +116,7 @@ private:
                       quint64 *bytesDone, QStringList *skipped, QString *error);
     bool copyLink(const RemoteEntry &link, const QString &localPath, QString *error);
     bool canContinue(int jobId, QString *error);
+    bool retryOnFreshConnection(int jobId, const std::function<bool()> &attempt, QString *error);
     bool uploadFile(int jobId, const QString &localPath, const QString &remotePath,
                     quint64 *bytesDone, quint64 bytesTotal, QString *error);
     bool uploadTree(int jobId, const QString &localRoot, const QString &remoteRoot,
