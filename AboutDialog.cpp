@@ -2,10 +2,13 @@
 #include "buildinfo.h"
 
 #include <QApplication>
+#include <QDesktopServices>
 #include <QEventLoop>
 #include <QFrame>
 #include <QIcon>
 #include <QPointer>
+#include <QProcess>
+#include <QUrl>
 
 AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("About Qt Terminal Example");
@@ -91,7 +94,14 @@ void AboutDialog::setupUI() {
         "<a href=\"https://github.com/JuihoChen/QtTerminalExample\">"
         "github.com/JuihoChen/QtTerminalExample</a>");
     linkLabel->setAlignment(Qt::AlignCenter);
-    linkLabel->setOpenExternalLinks(true);
+    // WSL usually has no Linux browser for xdg-open to start, so hand the
+    // link to Windows there; elsewhere use the desktop's default browser
+    connect(linkLabel, &QLabel::linkActivated, this, [](const QString &link) {
+        if (!qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME")
+            && QProcess::startDetached("explorer.exe", {link}))
+            return;
+        QDesktopServices::openUrl(QUrl(link));
+    });
     linkLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
     mainLayout->addWidget(linkLabel);
     mainLayout->addSpacing(14);
@@ -180,6 +190,15 @@ bool AboutDialog::eventFilter(QObject *watched, QEvent *event) {
         if (watched == m_host) {
             m_backdrop->setGeometry(m_host->rect());
             centerInBackdrop();
+        }
+        break;
+    case QEvent::Close:
+        // Like a window blocked by a modal dialog, the main window stays
+        // open while About is up; closing it here would end the app under
+        // this panel's event loop
+        if (watched == m_host) {
+            event->ignore();
+            return true;
         }
         break;
     case QEvent::Shortcut:
