@@ -160,8 +160,9 @@ QTermWidget* TerminalWindow::createTerminalWidget()
         if (terminal->property("isSSHTerminal").toBool()) {
             if (text.contains("Connection to") && text.contains("closed.")) {
                 returnToLocalShell(terminal);
-            } else if (terminal->property("handTypedSSH").toBool()) {
-                // A hand-typed session can also end without that message
+            } else {
+                // A session can also end without that message, such as a
+                // refused login, so look for ssh once the output goes quiet
                 sshCheck->start(500);
             }
             return;
@@ -213,6 +214,7 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
         terminal->sendText("clear\n");
         QTimer::singleShot(100, [terminal, sshCommand]() {
             terminal->sendText(sshCommand + "\n");
+            terminal->setProperty("sshCommandSent", true);
         });
     });
 
@@ -339,19 +341,9 @@ void TerminalWindow::onTerminalFinished()
     
     if (tabIndex == -1) return;
     
-    // Check if this was an SSH terminal
-    bool isSSH = finishedTerminal->property("isSSHTerminal").toBool();
-    if (isSSH) {
-        // When SSH connection ends, the terminal returns to local shell
-        returnToLocalShell(finishedTerminal);
-        
-        // Don't return here - let the terminal continue running as local
-        // The terminal process itself hasn't finished, just the SSH connection
-        // So we don't want to close or recreate anything
-        return;
-    }
-    
-    // For local terminals that actually finished, continue with normal closure logic
+    // The tab's shell has exited ("exit", or the shell was killed), even in a
+    // tab that was SSH: nothing is left to show, so the tab closes rather than
+    // staying behind as an empty "Terminal" tab
     if (tabWidget->count() - (hostScanTab ? 1 : 0) <= 1) {
         QApplication::quit();
         return;
@@ -359,6 +351,7 @@ void TerminalWindow::onTerminalFinished()
     
     // For multiple tabs, just close this tab
     QWidget *widget = tabWidget->widget(tabIndex);
+    removeFileBrowserPane(widget);
     tabWidget->removeTab(tabIndex);
     widget->deleteLater();
     
@@ -396,6 +389,7 @@ void TerminalWindow::returnToLocalShell(QTermWidget *terminal)
     if (connection.isValid()) terminal->setProperty("lastSSHConnection", connection);
     terminal->setProperty("recentOutput", QString());
     terminal->setProperty("handTypedSSH", false);
+    terminal->setProperty("sshCommandSent", false);
 
     tabWidget->setTabText(tabIndex, "Terminal");
     terminal->setProperty("isSSHTerminal", false);
@@ -416,7 +410,17 @@ void TerminalWindow::checkHandTypedSSH(QTermWidget *terminal)
     if (tabIndex == -1) return;
     bool isSSH = terminal->property("isSSHTerminal").toBool();
     bool handTyped = terminal->property("handTypedSSH").toBool();
-    if (isSSH && !handTyped) return;  // Opened from the connection list
+    if (isSSH && !handTyped) {
+        // Opened from the connection list: once its ssh command has run and
+        // no ssh is left in the tab (a refused login, a dropped connection),
+        // the tab is back at the local shell
+        if (!terminal->property("sshCommandSent").toBool()) return;
+        for (const QStringList &args : descendantCommandLines(terminal->getShellPID())) {
+            if (QFileInfo(args.first()).fileName() == "ssh") return;
+        }
+        returnToLocalShell(terminal);
+        return;
+    }
 
     QList<SSHTarget> targets;
     for (const QStringList &args : descendantCommandLines(terminal->getShellPID())) {
