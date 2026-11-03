@@ -13,6 +13,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **📁 Visual Connection Organization** - Folder structure with distinctive emoji icons
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
+- **🔀 SSH Tunnels** - Per-connection port forwards (`-L`, `-R`) and SOCKS proxies (`-D`) that start with the SSH tab, with "Open in browser" for web pages
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
 - **🙈 Hidden Saved Passwords** - Saved passwords go to `sshpass -e` through the environment, never shown on screen, in shell history or in `ps`
 - **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
@@ -119,6 +120,26 @@ ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
 ssh-copy-id -i ~/.ssh/id_ed25519.pub user@hostname
 ssh-add ~/.ssh/id_ed25519   # optional: load it into ssh-agent
 ```
+
+## SSH Tunnels
+
+A connection can carry port forwards that start with its SSH tab. Open the connection with **Edit** and switch to the **🔀 Tunnels** tab:
+
+- **➕ Add Forward** adds a row. Pick the type, the listen port and the destination:
+  - **Local (-L)** opens a port on this PC that leads to *destination host:port as seen from the server*. The destination can be the server itself (`localhost`) or any host it can reach, such as a BMC on the management network: listen `8443`, destination `10.254.0.5` port `443`, then open https://localhost:8443.
+  - **Remote (-R)** opens a port on the server that leads back to a host this PC can reach (`localhost` is this PC), for example a dev server on your machine.
+- **🧦 Add SOCKS Proxy** adds a **SOCKS (-D)** row: a proxy on this PC whose traffic leaves from the server. Point a browser at it to open many BMCs or internal pages by their real IPs without a forward for each.
+- **On** turns a row off without deleting it. The hint under the table says what the selected row does, and rows with mistakes (empty host, a port used twice) are flagged when you press OK.
+
+When the SSH tab opens, the enabled tunnels are added to its `ssh` command. A local port that is already taken (by another program, or another tab of the same connection) is left out with a clear message, and the login goes ahead without it. If ssh itself can't open a forward, such as a remote port that's taken on the server, the status bar says so and the details are in the terminal.
+
+While the tab is open, a **🔀 N tunnels** button in the status bar (also **Tunnels** in the tab's right-click menu) lists each tunnel and whether its port is listening, with:
+
+- **Open http://localhost:PORT / https://...** for local forwards, in your normal browser (in Windows under WSL). Common TLS ports such as 443 and 8443 list https first.
+- **Copy address** for other clients, such as a database tool.
+- **Copy proxy address** and **How to use this SOCKS proxy** for SOCKS tunnels (Firefox, Chrome and curl settings).
+
+Tunnels close when the SSH session in the tab ends. They are saved in `connections.json` as a `tunnels` list per connection; the file browser, SCP and host scans never open them.
 
 ## File Browser
 

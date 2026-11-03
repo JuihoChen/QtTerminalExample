@@ -126,6 +126,11 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
                 tabWidget->setCurrentIndex(tabIndex);
                 showFileBrowser();
             });
+
+            if (!activeTunnels(terminal).isEmpty()) {
+                QMenu *tunnelsMenu = menu.addMenu("🔀 Tunnels");
+                addTunnelActions(tunnelsMenu, terminal);
+            }
         }
     }
     

@@ -24,6 +24,7 @@ class QDockWidget;
 class QStackedWidget;
 class QLabel;
 class QPushButton;
+class QToolButton;
 QT_END_NAMESPACE
 
 class FileBrowserPane;
@@ -105,6 +106,14 @@ private:
     QTermWidget* createSSHTerminal(const SSHConnection &connection);
     void returnToLocalShell(QTermWidget *terminal);
     void checkHandTypedSSH(QTermWidget *terminal);
+
+    // SSH port forwarding (terminalwindow_tunnels.cpp)
+    QList<SSHTunnel> startableTunnels(const SSHConnection &connection, QStringList *skipped);
+    QList<SSHTunnel> activeTunnels(QTermWidget *terminal) const;
+    void setupTunnelsButton();
+    void updateTunnelsButton();
+    void addTunnelActions(QMenu *menu, QTermWidget *terminal);
+    QToolButton *tunnelsButton = nullptr;  // Status bar: the current SSH tab's tunnels
 
     // Connection management methods
     void loadConnections();

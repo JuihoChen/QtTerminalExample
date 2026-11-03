@@ -15,6 +15,9 @@
 #include <QGroupBox>
 #include <QCheckBox>
 #include <QTabWidget>
+#include <QTableWidget>
+
+#include "sshtunnel.h"
 
 struct SSHConnection; // Forward declaration
 
@@ -29,6 +32,9 @@ public:
     SSHConnection getConnection() const;
     void setAvailableFolders(const QStringList &folders);
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
     void validateInput();
     void onTestConnection();
@@ -36,11 +42,23 @@ private slots:
     void onBrowseIdentityFile();
     void onCheckIdentityFile();
     void updateKeyAuthState();
+    void onAddTunnel();
+    void onAddSocksTunnel();
+    void onRemoveTunnel();
+    void updateTunnelHint();
+    void onAccepted();
 
 private:
     void setupUI();
     QWidget *createGeneralTab();
     QWidget *createSSHKeyTab();
+    QWidget *createTunnelsTab();
+    void addTunnelRow(const SSHTunnel &tunnel);
+    SSHTunnel tunnelFromRow(int row) const;
+    int tunnelRowOf(QWidget *cellWidget) const;
+    void updateTunnelRow(int row);
+    QList<SSHTunnel> tunnels() const;
+    void updateTunnelsTabTitle();
     void populateFields(const SSHConnection &connection);
     
     QLineEdit *nameEdit;
@@ -60,6 +78,13 @@ private:
     QLabel *identityStatusLabel;
     QCheckBox *useAgentCheck;
     QLabel *agentStatusLabel;
+
+    // Tunnels tab
+    QWidget *tunnelsTab;
+    QTableWidget *tunnelTable;
+    QPushButton *removeTunnelButton;
+    QLabel *tunnelHintLabel;
+
     QPushButton *testButton;
     QDialogButtonBox *buttonBox;
     

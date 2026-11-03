@@ -98,6 +98,7 @@ void TerminalWindow::loadConnections()
         conn.useKeyAuth = connObj["useKeyAuth"].toBool(false);
         conn.identityFile = connObj["identityFile"].toString();
         conn.useAgent = connObj["useAgent"].toBool(true);
+        conn.tunnels = SSHTunnel::listFromJson(connObj["tunnels"].toArray());
         connections.append(conn);
     }
     
@@ -173,6 +174,7 @@ void TerminalWindow::saveConnections()
         connObj["useKeyAuth"] = conn.useKeyAuth;
         connObj["identityFile"] = conn.identityFile;
         connObj["useAgent"] = conn.useAgent;
+        if (!conn.tunnels.isEmpty()) connObj["tunnels"] = SSHTunnel::listToJson(conn.tunnels);
         connectionsArray.append(connObj);
     }
     
