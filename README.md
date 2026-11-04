@@ -129,6 +129,7 @@ A connection can carry port forwards that start with its SSH tab. Open the conne
   - **Local (-L)** opens a port on this PC that leads to *destination host:port as seen from the server*. The destination can be the server itself (`localhost`) or any host it can reach, such as a BMC on the management network: listen `8443`, destination `10.254.0.5` port `443`, then open https://localhost:8443.
   - **Remote (-R)** opens a port on the server that leads back to a host this PC can reach (`localhost` is this PC), for example a dev server on your machine.
 - **🧦 Add SOCKS Proxy** adds a **SOCKS (-D)** row: a proxy on this PC whose traffic leaves from the server. Point a browser at it to open many BMCs or internal pages by their real IPs without a forward for each.
+- **Web path** (optional, local forwards only) is the page **Open in browser** goes to, such as `/base-view` for BCM's Base View (listen `18081`, destination `localhost` port `8081`).
 - **On** turns a row off without deleting it. The hint under the table says what the selected row does, and rows with mistakes (empty host, a port used twice) are flagged when you press OK.
 
 When the SSH tab opens, the enabled tunnels are added to its `ssh` command. A local port that is already taken (by another program, or another tab of the same connection) is left out with a clear message, and the login goes ahead without it. If ssh itself can't open a forward, such as a remote port that's taken on the server, the status bar says so and the details are in the terminal.

@@ -24,7 +24,7 @@
 #include "commandsafety.h"
 
 namespace {
-enum TunnelColumn { ColOn, ColType, ColListen, ColHost, ColPort, ColCount };
+enum TunnelColumn { ColOn, ColType, ColListen, ColHost, ColPort, ColPath, ColCount };
 }
 
 ConnectionDialog::ConnectionDialog(QWidget *parent)
@@ -49,7 +49,7 @@ ConnectionDialog::ConnectionDialog(const SSHConnection &connection, QWidget *par
 void ConnectionDialog::setupUI()
 {
     setModal(true);
-    resize(580, 470);
+    resize(680, 470);
     tunnelsTab = nullptr;
     
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
@@ -438,7 +438,7 @@ QWidget *ConnectionDialog::createTunnelsTab()
     layout->addWidget(intro);
 
     tunnelTable = new QTableWidget(0, ColCount, tab);
-    tunnelTable->setHorizontalHeaderLabels({"On", "Type", "Listen port", "Destination host", "Port"});
+    tunnelTable->setHorizontalHeaderLabels({"On", "Type", "Listen port", "Destination host", "Port", "Web path"});
     tunnelTable->verticalHeader()->setVisible(false);
     tunnelTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     tunnelTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -449,12 +449,16 @@ QWidget *ConnectionDialog::createTunnelsTab()
     header->setSectionResizeMode(ColListen, QHeaderView::ResizeToContents);
     header->setSectionResizeMode(ColHost, QHeaderView::Stretch);
     header->setSectionResizeMode(ColPort, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(ColPath, QHeaderView::Interactive);
+    tunnelTable->setColumnWidth(ColPath, 110);
     header->setHighlightSections(false);
     tunnelTable->horizontalHeaderItem(ColListen)->setToolTip(
         "Local and SOCKS: the port on this PC. Remote: the port opened on the server.");
     tunnelTable->horizontalHeaderItem(ColHost)->setToolTip(
         "Local: a host the server can reach (localhost is the server itself).\n"
         "Remote: a host this PC can reach (localhost is this PC).");
+    tunnelTable->horizontalHeaderItem(ColPath)->setToolTip(
+        "Optional, Local only: the page \"Open in browser\" goes to, such as /base-view");
     tunnelTable->setMinimumHeight(150);
     layout->addWidget(tunnelTable, 1);
 
@@ -518,6 +522,11 @@ void ConnectionDialog::addTunnelRow(const SSHTunnel &tunnel)
     portSpin->setValue(tunnel.type == SSHTunnel::Dynamic ? 0 : tunnel.targetPort);
     tunnelTable->setCellWidget(row, ColPort, portSpin);
 
+    QLineEdit *pathEdit = new QLineEdit(tunnelTable);
+    pathEdit->setText(tunnel.webPath);
+    pathEdit->setPlaceholderText("/ (optional)");
+    tunnelTable->setCellWidget(row, ColPath, pathEdit);
+
     // Clicking into a cell editor selects its row, so the hint and Remove follow it
     auto selectRow = [this, typeCombo]() {
         int r = tunnelRowOf(typeCombo);
@@ -528,12 +537,13 @@ void ConnectionDialog::addTunnelRow(const SSHTunnel &tunnel)
         updateTunnelRow(tunnelRowOf(typeCombo));
         updateTunnelHint();
     });
-    for (QWidget *w : QList<QWidget*>{typeCombo, listenSpin, hostEdit, portSpin}) {
+    for (QWidget *w : QList<QWidget*>{typeCombo, listenSpin, hostEdit, portSpin, pathEdit}) {
         w->installEventFilter(this);
     }
     connect(listenSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, selectRow]() { selectRow(); updateTunnelHint(); });
     connect(portSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, selectRow]() { selectRow(); updateTunnelHint(); });
     connect(hostEdit, &QLineEdit::textEdited, this, [this, selectRow]() { selectRow(); updateTunnelHint(); });
+    connect(pathEdit, &QLineEdit::textEdited, this, [this, selectRow]() { selectRow(); updateTunnelHint(); });
 
     updateTunnelRow(row);
     tunnelTable->resizeRowToContents(row);
@@ -579,6 +589,8 @@ SSHTunnel ConnectionDialog::tunnelFromRow(int row) const
         tunnel.targetHost = hostEdit->text().trimmed();
         tunnel.targetPort = portSpin->value();
     }
+    QLineEdit *pathEdit = qobject_cast<QLineEdit*>(tunnelTable->cellWidget(row, ColPath));
+    if (pathEdit && tunnel.type == SSHTunnel::Local) tunnel.webPath = pathEdit->text().trimmed();
     return tunnel;
 }
 
@@ -601,6 +613,10 @@ void ConnectionDialog::updateTunnelRow(int row)
     bool dynamic = typeCombo->currentData().toInt() == SSHTunnel::Dynamic;
     hostEdit->setEnabled(!dynamic);
     portSpin->setEnabled(!dynamic);
+    // Only a local forward opens in this PC's browser, so only it has a web path
+    if (QWidget *pathEdit = tunnelTable->cellWidget(row, ColPath)) {
+        pathEdit->setEnabled(typeCombo->currentData().toInt() == SSHTunnel::Local);
+    }
     if (dynamic) {
         hostEdit->clear();
         hostEdit->setPlaceholderText("(any host, chosen by the browser)");
@@ -632,9 +648,10 @@ void ConnectionDialog::updateTunnelHint()
     if (!problem.isEmpty()) {
         hint = "❌ " + problem.left(1).toUpper() + problem.mid(1) + ".";
     } else if (t.type == SSHTunnel::Local) {
-        hint = QString("ssh -L %1: open %2://localhost:%3 on this PC to reach %4:%5 from the server.")
+        hint = QString("ssh -L %1: open %2://localhost:%3%4 on this PC to reach %5:%6 from the server.")
                    .arg(t.spec(), t.looksLikeHttps() ? "https" : "http")
-                   .arg(t.listenPort).arg(t.targetHost).arg(t.targetPort);
+                   .arg(t.listenPort).arg(t.urlPath() == "/" ? QString() : t.urlPath())
+                   .arg(t.targetHost).arg(t.targetPort);
     } else if (t.type == SSHTunnel::Remote) {
         hint = QString("ssh -R %1: programs on the server connect to localhost:%2 there to reach %3:%4 from this PC.")
                    .arg(t.spec()).arg(t.listenPort).arg(t.targetHost).arg(t.targetPort);

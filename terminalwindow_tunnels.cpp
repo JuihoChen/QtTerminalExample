@@ -43,7 +43,7 @@ void openInBrowser(const QString &url)
 
 QString webUrl(const SSHTunnel &tunnel, bool https)
 {
-    return QString("%1://localhost:%2/").arg(https ? "https" : "http").arg(tunnel.listenPort);
+    return QString("%1://localhost:%2%3").arg(https ? "https" : "http").arg(tunnel.listenPort).arg(tunnel.urlPath());
 }
 
 } // namespace

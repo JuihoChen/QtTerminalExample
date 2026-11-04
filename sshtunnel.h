@@ -20,6 +20,7 @@ struct SSHTunnel {
     int listenPort;      // This PC's port for Local/Dynamic, the server's port for Remote
     QString targetHost;  // Not used for Dynamic
     int targetPort;      // Not used for Dynamic
+    QString webPath;     // Local only: page "Open in browser" goes to, e.g. "/base-view"
     bool enabled;
 
     SSHTunnel() : type(Local), listenPort(8080), targetHost("localhost"), targetPort(80), enabled(true) {}
@@ -27,6 +28,7 @@ struct SSHTunnel {
     bool operator==(const SSHTunnel &other) const {
         return type == other.type && listenPort == other.listenPort &&
                (type == Dynamic || (targetHost == other.targetHost && targetPort == other.targetPort)) &&
+               webPath == other.webPath &&
                enabled == other.enabled;
     }
 
@@ -73,6 +75,13 @@ struct SSHTunnel {
         }
     }
 
+    // The web path with a leading "/", or "/" when none is set
+    QString urlPath() const {
+        QString path = webPath.trimmed();
+        if (path.isEmpty()) return "/";
+        return path.startsWith('/') ? path : "/" + path;
+    }
+
     // Web pages behind common TLS ports open as https, the rest as http
     bool looksLikeHttps() const {
         // 8081: BCM's CMDaemon, which serves Base View over https
@@ -92,6 +101,11 @@ struct SSHTunnel {
             }
         }
         if (targetPort < 1 || targetPort > 65535) return "the destination port must be 1-65535";
+        for (const QChar &ch : webPath.trimmed()) {
+            if (ch.isSpace() || ch == '"' || ch == '<' || ch == '>') {
+                return QString("the web path \"%1\" can't contain spaces, quotes or < >").arg(webPath.trimmed());
+            }
+        }
         return QString();
     }
 
@@ -103,6 +117,7 @@ struct SSHTunnel {
             obj["targetHost"] = targetHost;
             obj["targetPort"] = targetPort;
         }
+        if (type == Local && !webPath.trimmed().isEmpty()) obj["webPath"] = webPath.trimmed();
         obj["enabled"] = enabled;
         return obj;
     }
@@ -114,6 +129,7 @@ struct SSHTunnel {
         t.listenPort = obj["listenPort"].toInt(0);
         t.targetHost = obj["targetHost"].toString(t.type == Dynamic ? QString() : QString("localhost"));
         t.targetPort = obj["targetPort"].toInt(0);
+        t.webPath = t.type == Local ? obj["webPath"].toString() : QString();
         t.enabled = obj["enabled"].toBool(true);
         return t;
     }
