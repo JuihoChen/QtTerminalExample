@@ -75,7 +75,8 @@ struct SSHTunnel {
 
     // Web pages behind common TLS ports open as https, the rest as http
     bool looksLikeHttps() const {
-        static const QList<int> httpsPorts = {443, 4443, 5001, 8006, 8443, 9443, 10443};
+        // 8081: BCM's CMDaemon, which serves Base View over https
+        static const QList<int> httpsPorts = {443, 4443, 5001, 8006, 8081, 8443, 9443, 10443};
         return httpsPorts.contains(targetPort) || httpsPorts.contains(listenPort);
     }
 
