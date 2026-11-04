@@ -8,6 +8,7 @@
 #include <QDesktopServices>
 #include <QHostAddress>
 #include <QMenu>
+#include <QNetworkProxy>
 #include <QProcess>
 #include <QStatusBar>
 #include <QTcpServer>
@@ -18,10 +19,14 @@ namespace {
 
 // Whether this PC can open a listening socket on the port, the way ssh does
 // for -L and -D (it binds the loopback address unless told otherwise)
-bool localPortFree(int port)
+bool localPortFree(int port, QString *error = nullptr)
 {
     QTcpServer probe;
-    if (!probe.listen(QHostAddress::LocalHost, static_cast<quint16>(port))) return false;
+    probe.setProxy(QNetworkProxy::NoProxy);
+    if (!probe.listen(QHostAddress::LocalHost, static_cast<quint16>(port))) {
+        if (error) *error = probe.errorString();
+        return false;
+    }
     probe.close();
     return true;
 }
@@ -56,13 +61,14 @@ QList<SSHTunnel> TerminalWindow::startableTunnels(const SSHConnection &connectio
             if (skipped) *skipped << QString("%1: %2").arg(tunnel.describe(), problem);
             continue;
         }
-        if (tunnel.listensLocally() && !localPortFree(tunnel.listenPort)) {
+        QString bindError;
+        if (tunnel.listensLocally() && !localPortFree(tunnel.listenPort, &bindError)) {
             if (skipped) {
-                *skipped << QString("%1: local port %2 is %3")
-                    .arg(tunnel.describe()).arg(tunnel.listenPort)
+                *skipped << QString("%1: local port %2 can't be opened (%3). %4")
+                    .arg(tunnel.describe()).arg(tunnel.listenPort).arg(bindError)
                     .arg(tunnel.listenPort < 1024
-                         ? "below 1024, which needs admin rights, or is already in use"
-                         : "already in use by another program or another SSH tab");
+                         ? QString("Ports below 1024 need admin rights.")
+                         : QString("To see what holds it, run: ss -ltnp | grep :%1").arg(tunnel.listenPort));
             }
             continue;
         }
