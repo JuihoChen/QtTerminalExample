@@ -303,11 +303,17 @@ void RemoteDropView::dropEvent(QDropEvent *event)
 // ============ FileBrowserPane ============
 
 FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *parent)
-    : QWidget(parent), m_connection(connection),
-      m_browseThread(new QThread(this)), m_browseWorker(new SftpWorker(connection))
+    : QWidget(parent), m_connection(connection), m_browseThread(nullptr), m_browseWorker(nullptr)
 {
     setupSections(false);
+    startBrowseWorker();
+}
 
+void FileBrowserPane::startBrowseWorker()
+{
+    m_connected = false;
+    m_browseThread = new QThread(this);
+    m_browseWorker = new SftpWorker(m_connection);
     m_browseWorker->moveToThread(m_browseThread);
     connect(m_browseWorker, &SftpWorker::connected, this, &FileBrowserPane::onConnected);
     connect(m_browseWorker, &SftpWorker::connectionFailed, this, &FileBrowserPane::onConnectionFailed);
@@ -323,6 +329,37 @@ FileBrowserPane::FileBrowserPane(const SSHConnection &connection, QWidget *paren
     QMetaObject::invokeMethod(m_browseWorker, "connectToServer", Qt::QueuedConnection);
 }
 
+void FileBrowserPane::suspendConnection()
+{
+    if (m_suspended || m_message) return;  // Already, or a local-only pane
+    m_suspended = true;
+    if (m_browseWorker) {
+        m_resumePath = m_remoteModel->path();
+        unwatch(&m_browseWatchdog);
+        SftpWorker::retire(m_browseThread, m_browseWorker);
+        m_browseThread = nullptr;
+        m_browseWorker = nullptr;
+        m_connected = false;
+    }
+    if (!hasActiveTransfers()) retireTransferWorker();
+}
+
+void FileBrowserPane::resumeConnection()
+{
+    if (!m_suspended) return;
+    m_suspended = false;
+    if (!m_browseWorker) startBrowseWorker();
+}
+
+void FileBrowserPane::retireTransferWorker()
+{
+    if (!m_transferWorker) return;
+    unwatch(&m_transferWatchdog);
+    SftpWorker::retire(m_transferThread, m_transferWorker);
+    m_transferThread = nullptr;
+    m_transferWorker = nullptr;
+}
+
 // Local folder only, for a tab with no server to browse: a message takes the
 // remote list's place, and there is nothing to transfer
 FileBrowserPane::FileBrowserPane(QWidget *parent)
@@ -336,6 +373,7 @@ void FileBrowserPane::setupSections(bool localOnly)
     m_transferThread = nullptr;
     m_transferWorker = nullptr;
     m_connected = false;
+    m_suspended = false;
     m_nextJobId = 1;
     m_editDir = nullptr;
     m_editWatcher = new QFileSystemWatcher(this);
@@ -425,29 +463,41 @@ FileBrowserPane::~FileBrowserPane()
     delete m_editDir;  // Removes the local copies of edited files
 }
 
+// The timer goes with the worker it watches, so it can't reach a retired one
+void FileBrowserPane::unwatch(Watchdog *watchdog)
+{
+    delete watchdog->timer;
+    watchdog->timer = nullptr;
+    watchdog->step.clear();
+    watchdog->stalledStep.clear();
+}
+
 void FileBrowserPane::watch(SftpWorker *worker, Watchdog *watchdog)
 {
-    watchdog->timer = new QTimer(this);
-    watchdog->timer->setSingleShot(true);
-    watchdog->timer->setInterval(kStallSeconds * 1000);
+    // The timer is the context of every connection, so once unwatch()
+    // deletes it, nothing the old worker still sends reaches the watchdog
+    QTimer *timer = new QTimer(this);
+    watchdog->timer = timer;
+    timer->setSingleShot(true);
+    timer->setInterval(kStallSeconds * 1000);
 
-    connect(worker, &SftpWorker::busy, this, [watchdog](bool busy) {
+    connect(worker, &SftpWorker::busy, timer, [watchdog, timer](bool busy) {
         if (busy) {
             watchdog->step.clear();
             watchdog->stalledStep.clear();
-            watchdog->timer->start();
+            timer->start();
         } else {
-            watchdog->timer->stop();
+            timer->stop();
         }
     });
-    connect(worker, &SftpWorker::step, this, [watchdog](const QString &step) {
+    connect(worker, &SftpWorker::step, timer, [watchdog, timer](const QString &step) {
         watchdog->step = step;
-        if (watchdog->timer->isActive()) watchdog->timer->start();
+        if (timer->isActive()) timer->start();
     });
-    connect(worker, &SftpWorker::transferProgress, this, [watchdog]() {
-        if (watchdog->timer->isActive()) watchdog->timer->start();
+    connect(worker, &SftpWorker::transferProgress, timer, [timer]() {
+        if (timer->isActive()) timer->start();
     });
-    connect(watchdog->timer, &QTimer::timeout, this, [worker, watchdog]() {
+    connect(timer, &QTimer::timeout, this, [worker, watchdog]() {
         watchdog->stalledStep = watchdog->step.isEmpty() ? QStringLiteral("Waiting for the server")
                                                          : watchdog->step;
         worker->abortConnection();
@@ -697,7 +747,9 @@ void FileBrowserPane::onConnected(const QString &homePath)
 {
     m_connected = true;
     m_homePath = homePath;
-    navigateRemote(homePath);
+    QString path = m_resumePath.isEmpty() ? homePath : m_resumePath;
+    m_resumePath.clear();
+    navigateRemote(path);
 }
 
 void FileBrowserPane::onConnectionFailed(const QString &error)
@@ -721,6 +773,7 @@ void FileBrowserPane::navigateRemote(const QString &path)
 
 void FileBrowserPane::refreshRemote()
 {
+    if (!m_browseWorker) return;  // Panel closed; it reloads when reopened
     if (!m_connected) {
         setRemoteStatus(QString("Connecting to %1...").arg(m_connection.host));
         QMetaObject::invokeMethod(m_browseWorker, "connectToServer", Qt::QueuedConnection);
@@ -1090,6 +1143,9 @@ void FileBrowserPane::onTransferFinished(int jobId, bool success, const QString 
             }
         }
     }
+
+    // The panel was closed while this ran: log out now that nothing is left
+    if (m_suspended && !hasActiveTransfers()) retireTransferWorker();
 
     // Show what an upload added, once the last one into this folder is done
     if (!refreshDir.isEmpty() && refreshDir == m_remoteModel->path()) {

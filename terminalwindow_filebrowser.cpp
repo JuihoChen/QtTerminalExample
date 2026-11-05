@@ -34,10 +34,15 @@ void TerminalWindow::setupFileBrowserDock()
     addDockWidget(Qt::RightDockWidgetArea, fileBrowserDock);
     fileBrowserDock->hide();
 
-    // Panes connect to the server only while the dock is open
+    // Panes connect to the server only while the dock is open: closing it
+    // logs them out, and the shown tab's pane logs back in when it reopens
     connect(fileBrowserDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
-        if (visible) updateFileBrowser();
-        else if (hostScanTab) hostScanTab->takeBackImportSection();  // Keep them reachable
+        if (visible) {
+            updateFileBrowser();
+            return;
+        }
+        for (FileBrowserPane *pane : qAsConst(fileBrowserPanes)) pane->suspendConnection();
+        if (hostScanTab) hostScanTab->takeBackImportSection();  // Keep them reachable
     });
 }
 
@@ -103,6 +108,7 @@ void TerminalWindow::updateFileBrowser()
             removeFileBrowserPane(terminal);
         });
     }
+    if (fileBrowserDock->isVisible()) pane->resumeConnection();
     fileBrowserStack->setCurrentWidget(pane);
 }
 
