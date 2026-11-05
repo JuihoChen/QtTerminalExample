@@ -111,6 +111,12 @@ public:
     bool hasOpenEdits() const { return !m_edits.isEmpty(); }
     void setMessage(const QString &text);  // Shown in place of the remote list (local only)
 
+    // While the panel is closed: log out of the server, keeping the folders,
+    // transfer list and edits; transfers still running finish first
+    void suspendConnection();
+    // Logs back in and returns to the folder that was open
+    void resumeConnection();
+
 private slots:
     void onConnected(const QString &homePath);
     void onConnectionFailed(const QString &error);
@@ -151,6 +157,9 @@ private:
     };
 
     void watch(SftpWorker *worker, Watchdog *watchdog);
+    void unwatch(Watchdog *watchdog);
+    void startBrowseWorker();
+    void retireTransferWorker();
     QString stalledMessage(const QString &step) const;
 
     void setupSections(bool localOnly);
@@ -197,6 +206,8 @@ private:
     SftpWorker *m_transferWorker;
 
     bool m_connected;
+    bool m_suspended;      // Panel closed: no connections once transfers end
+    QString m_resumePath;  // Folder to reopen after logging back in
     QString m_homePath;
     QString m_requestedPath;
 
