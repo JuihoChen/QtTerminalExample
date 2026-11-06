@@ -51,6 +51,9 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addAction("✏️ Edit Connection", [this, item]() {
                 editConnection(item);
             });
+            menu.addAction("🗑️ Delete Connection", [this, item]() {
+                deleteConnection(item);
+            });
             int tunnelCount = 0;
             for (const SSHTunnel &t : qvariant_cast<SSHConnection>(connectionData).tunnels) {
                 if (t.enabled) ++tunnelCount;
@@ -58,9 +61,6 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addAction(tunnelCount > 0 ? QString("🔀 Tunnels (%1)...").arg(tunnelCount)
                                            : QString("🔀 Tunnels..."), [this, item]() {
                 editTunnels(item);
-            });
-            menu.addAction("🗑️ Delete Connection", [this, item]() {
-                deleteConnection(item);
             });
             menu.addSeparator();
             int index = item->data(0, Qt::UserRole + 1).toInt();
