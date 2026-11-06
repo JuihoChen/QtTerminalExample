@@ -15,8 +15,6 @@
 #include <QToolButton>
 #include <QEvent>
 #include <QTimer>
-#include <QPainter>
-#include <QIcon>
 
 namespace {
 
@@ -192,23 +190,6 @@ void TerminalWindow::setupUI()
     resize(1400, 800);
 }
 
-// A plain magnifier in one colour, drawn rather than an emoji so it looks the
-// same on every system (Windows fonts turn 🔍 into a colour picture)
-static QPixmap magnifierPixmap(const QColor &color, int size, qreal dpr)
-{
-    QPixmap pixmap(QSize(size, size) * dpr);
-    pixmap.setDevicePixelRatio(dpr);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    const qreal pen = size / 7.0;
-    painter.setPen(QPen(color, pen, Qt::SolidLine, Qt::RoundCap));
-    const qreal lens = size * 0.62;
-    painter.drawEllipse(QRectF(pen / 2, pen / 2, lens - pen, lens - pen));
-    painter.drawLine(QPointF(lens * 0.86, lens * 0.86), QPointF(size - pen, size - pen));
-    return pixmap;
-}
-
 void TerminalWindow::setupMenus()
 {
     QMenuBar *menuBar = this->menuBar();
@@ -282,17 +263,7 @@ void TerminalWindow::setupMenus()
     QHBoxLayout *findLayout = new QHBoxLayout(findCorner);
     findLayout->setContentsMargins(0, 2, 8, 2);
     findButton = new QToolButton(findCorner);
-    findButton->setText("Find");
-    findButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    {
-        const int iconSize = 12;
-        const qreal dpr = devicePixelRatioF();
-        QIcon icon;
-        icon.addPixmap(magnifierPixmap(QColor("#0066cc"), iconSize, dpr), QIcon::Normal, QIcon::Off);
-        icon.addPixmap(magnifierPixmap(Qt::white, iconSize, dpr), QIcon::Normal, QIcon::On);
-        findButton->setIcon(icon);
-        findButton->setIconSize(QSize(iconSize, iconSize));
-    }
+    findButton->setText("🔍 Find");
     findButton->setToolTip("Find in terminal (Ctrl+Shift+F)");
     findButton->setFocusPolicy(Qt::NoFocus);
     findButton->setCursor(Qt::PointingHandCursor);
