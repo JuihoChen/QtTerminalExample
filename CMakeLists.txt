@@ -136,6 +136,13 @@ add_custom_command(TARGET QtTerminalExample POST_BUILD
         "$<TARGET_FILE_DIR:QtTerminalExample>/qtterminal.png"
 )
 
+# Unit tests and a startup smoke test: build, then run "ctest" in the build folder
+option(BUILD_TESTS "Build the unit tests" ON)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Using QTermWidget library: ${QTERMWIDGET_LIBRARY}")
 if(USE_STATIC_QTERMWIDGET)

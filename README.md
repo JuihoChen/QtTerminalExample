@@ -204,6 +204,17 @@ make -j$(nproc)
 
 The build must happen in a separate `build` folder; the bundled qtermwidget refuses in-source builds. The build also copies the terminal color schemes into `build/color-schemes/`, next to the program, so you don't need to run `make install`.
 
+### Run Tests
+
+The build also makes a small Qt Test suite. From the `build` folder:
+```bash
+ctest --output-on-failure
+```
+
+It checks the shell command building and quoting, connection validation, loading `connections.json` (including files from older versions), the host scan's IP address helpers and script (it scans `127.0.0.1` on a port the test opens), the file browser's path and permission helpers, and the port field. A smoke test also starts the app on Qt's offscreen platform with an empty config folder. None of it needs an SSH server or a display. Pass `-DBUILD_TESTS=OFF` to `cmake` to skip building the tests.
+
+GitHub Actions builds the app and runs these tests on Ubuntu 24.04 after every push and pull request (`.github/workflows/build.yml`).
+
 ### Run Application
 From the `build` folder:
 ```bash
