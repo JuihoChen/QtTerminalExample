@@ -8,5 +8,7 @@
         <file alias="qtterminal-64.png">icons/qtterminal-64.png</file>
         <file alias="qtterminal-128.png">icons/qtterminal-128.png</file>
         <file alias="qtterminal-256.png">icons/qtterminal-256.png</file>
+        <file alias="dock-close.png">icons/dock-close.png</file>
+        <file alias="dock-float.png">icons/dock-float.png</file>
     </qresource>
 </RCC>
