@@ -27,7 +27,7 @@ ConnectionDialog::ConnectionDialog(QWidget *parent)
     setupUI();
     
     // Set default values for new connection
-    portSpinBox->setValue(22);
+    portCombo->setValue(22);
     folderCombo->setCurrentText("Personal");
 }
 
@@ -119,10 +119,8 @@ QWidget *ConnectionDialog::createGeneralTab()
     formLayout->addRow("", showPasswordCheck);
     
     // Port field
-    portSpinBox = new QSpinBox(this);
-    portSpinBox->setRange(1, 65535);
-    portSpinBox->setValue(22);
-    formLayout->addRow("Port:", portSpinBox);
+    portCombo = new PortComboBox(this);
+    formLayout->addRow("Port:", portCombo);
     
     // Folder field
     folderCombo = new QComboBox(this);
@@ -296,7 +294,7 @@ void ConnectionDialog::populateFields(const SSHConnection &connection)
     hostEdit->setText(connection.host);
     usernameEdit->setText(connection.username);
     passwordEdit->setText(connection.password);
-    portSpinBox->setValue(connection.port);
+    portCombo->setValue(connection.port);
     useKeyAuthCheck->setChecked(connection.useKeyAuth);
     identityFileEdit->setText(connection.identityFile);
     useAgentCheck->setChecked(connection.useAgent);
@@ -315,7 +313,7 @@ SSHConnection ConnectionDialog::getConnection() const
     conn.host = hostEdit->text().trimmed();
     conn.username = usernameEdit->text().trimmed();
     conn.password = passwordEdit->text(); // Don't trim password (spaces might be significant)
-    conn.port = portSpinBox->value();
+    conn.port = portCombo->value();
     conn.folder = folderCombo->currentText().trimmed();
     conn.useKeyAuth = useKeyAuthCheck->isChecked();
     conn.identityFile = identityFileEdit->text().trimmed();

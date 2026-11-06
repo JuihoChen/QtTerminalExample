@@ -19,6 +19,7 @@ class QProcess;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
+class PortComboBox;
 class QThread;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -90,7 +91,7 @@ private:
 
     QLineEdit *m_startEdit;
     QLineEdit *m_endEdit;
-    QSpinBox *m_portSpin;
+    PortComboBox *m_portCombo;
     QSpinBox *m_timeoutSpin;
     QComboBox *m_scanFromCombo;
     QLabel *m_scanFromNote;
