@@ -122,7 +122,7 @@ ssh-add ~/.ssh/id_ed25519   # optional: load it into ssh-agent
 
 ## File Browser
 
-The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at. Open it with **View → File Browser** (`Ctrl+Shift+B`) or right-click an SSH tab → **📂 File Browser...**. It docks on the right of the terminal; drag its title bar to move it to the left or bottom, or float it.
+The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at. Open it with **View → File Browser** (`Ctrl+Shift+B`) or right-click a terminal tab → **📂 File Browser...** (on a local tab it shows just the local folder). It docks on the right of the terminal; drag its title bar to move it to the left or bottom, or float it.
 
 - **Remote folder (top)** - The server's files with size, modified time, permissions and owner. Double-click a folder (or press `Enter`) to open it, `Backspace` or the ↑ button to go up, or type a path and press `Enter`. Click a column to sort; folders stay on top.
 - **Local folder (middle)** - Where downloads go. Drag files or folders from the remote list and drop them here, or onto a local subfolder. Double-click to move between local folders.
@@ -290,7 +290,7 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 - **Folder Kept** - New Connection starts in the folder selected in the tree, and Edit Connection keeps the connection's current folder
 
 ### File Transfer Operations
-- **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
+- **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click a terminal tab → "📂 File Browser..." (see [File Browser](#file-browser))
 - **Upload File** - Right-click SSH tab → "📤 Upload File to Server"
 
 ### Interface Management
@@ -501,7 +501,7 @@ QtTerminalExample/
 - ✅ **New Tab Button** - A browser-style "+" after the last tab
 - ✅ **Port Picker** - Port fields are editable lists of common ports
 - ✅ **Scan Range** - The default range comes from your real network (wired before Wi-Fi, skipping docker, VPNs and unplugged adapters) at its real subnet size, and the end address follows the start as you type
-- ✅ **File Browser** - Logs out when the panel closes and back in when it opens, survives a dropped idle connection, and shows file type icons
+- ✅ **File Browser** - Logs out when the panel closes and back in when it opens, survives a dropped idle connection, shows file type icons, and opens from the right-click menu of local tabs too
 - ✅ **Tabs Close on Exit** - A tab closes when its shell exits, even after a failed SSH login
 - ✅ **WSL** - Dialogs and message boxes open inside the main window, the app icon shows in the Start menu and taskbar, and the desktop shortcut has no penguin badge
 - ✅ **Refresh on F5** - Connections → Refresh is `F5` only, so `Ctrl+R` reaches the shell
