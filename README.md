@@ -146,7 +146,7 @@ The file browser uses [libssh](https://www.libssh.org/) for SFTP.
 
 Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but for SSH only. Open it with **Connections → Scan for SSH Hosts...**, right-click a folder → **Scan for SSH Hosts into <folder>...**, or right-click a connection → **Scan for SSH Hosts from Here...**. It opens as a **🔍 SSH Scan** tab beside the terminal tabs, so the results stay put while you work in a terminal, and a scan keeps running when you switch tabs. Close the tab to stop a scan.
 
-- **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). It starts out as the /24 around the scanning host.
+- **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). Scanning from this computer, it starts out as the subnet of your real network connection: wired Ethernet is preferred over Wi-Fi, and adapters with no link, VPNs and container/VM bridges (such as `docker0`) are skipped. The subnet's real size is used (a /23 gives x.x.192.1 to x.x.193.254), and anything bigger than a /20 falls back to the /24 around your address. Scanning through a saved connection, it is the /24 around that host. As you type the start address, the end follows it: after the first three numbers it becomes `.254` of the same /24. Type your own end address to stop that, or clear the end box to make it follow again.
 - **SSH port and timeout** - The port to check (22 unless set) and how long to wait for each host.
 - **Scan from** - **This computer**, or **Through** a saved connection: the scan then runs on that server (a head node or jump box) and finds the hosts only it can reach. It uses only standard Linux tools there: `ping`, a TCP check of the port (bash's `/dev/tcp` with `timeout`, or `nc`), and the ARP table in `/proc/net/arp`. Nothing is installed.
 - **Results** - One row per host that answered a ping, has the port open, or is in the ARP table, with its **IP address**, **MAC address** and **SSH open**. MAC addresses come from the scanning host's ARP table, so they show only for hosts on its own subnet (and for the scanning host itself). Hosts with the port open start checked; hosts that already have a connection are marked **(saved)**. When the port isn't open, the SSH column says why: **No (refused)** means the host answered but nothing listens on the port, **No (timed out)** means no answer within the timeout (often a firewall dropping it; try a longer timeout), and **No (unreachable)** means the network reported the host unreachable. Hover over the value for the same explanation.
@@ -269,7 +269,7 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 - **Interrupt** - `Ctrl+Z` sends the interrupt signal (what `Ctrl+C` does in other terminals), because `Ctrl+C` copies. Suspending a program with `Ctrl+Z` isn't available
 - **Paste** - `Ctrl+V` in terminal or right-click → Paste
 - **Select All** - `Ctrl+A` or right-click → Select All (so `Ctrl+A` doesn't move to the start of the line)
-- **Find** - `Ctrl+Shift+F`, the 🔍 Find button at the right end of the menu bar, Edit → Find... or right-click → Find... opens a find bar under the terminal. It searches the screen and the scrollback, newest output first: `Enter` goes up to older matches and `Shift+Enter` comes back down. **Aa** matches case and **.\*** treats the text as a regular expression. `Esc` closes the bar and returns to the terminal
+- **Find** - `Ctrl+Shift+F`, the 🔍 Find button at the right end of the menu bar, Edit → Find... or right-click → Find... opens a find bar under the terminal. It searches the screen and the scrollback, newest output first: `Enter` goes up to older matches and `Shift+Enter` comes back down. **Aa** matches case and **.\*** treats the text as a regular expression. `Esc` closes the bar and returns to the terminal. On tabs without a terminal, such as SSH Scan, the Find button is greyed out
 - **Clear Terminal** - Right-click → Clear wipes the screen and the scrollback; `Ctrl+L` asks the shell to clear the screen and keeps the scrollback
 
 ### Font and Display
@@ -496,7 +496,17 @@ QtTerminalExample/
 
 ## Version History
 
-### v0.8 (Current)
+### v0.9 (Current)
+- ✅ **Find in Terminal** - A find bar with match case and regex, opened from `Ctrl+Shift+F` or the 🔍 Find button in the menu bar (greyed out on tabs without a terminal)
+- ✅ **New Tab Button** - A browser-style "+" after the last tab
+- ✅ **Port Picker** - Port fields are editable lists of common ports
+- ✅ **Scan Range** - The default range comes from your real network (wired before Wi-Fi, skipping docker, VPNs and unplugged adapters) at its real subnet size, and the end address follows the start as you type
+- ✅ **File Browser** - Logs out when the panel closes and back in when it opens, survives a dropped idle connection, and shows file type icons
+- ✅ **Tabs Close on Exit** - A tab closes when its shell exits, even after a failed SSH login
+- ✅ **WSL** - Dialogs and message boxes open inside the main window, the app icon shows in the Start menu and taskbar, and the desktop shortcut has no penguin badge
+- ✅ **Refresh on F5** - Connections → Refresh is `F5` only, so `Ctrl+R` reaches the shell
+
+### v0.8
 - ✅ **About Dialog** - Shows the git commit and build time of the running build (refreshed on every `make`), the Qt version, key shortcuts and the GitHub link
 - ✅ **App Icon** - A bundled terminal-with-globe icon for the window, taskbar and desktop launcher, so it no longer depends on emoji fonts
 - ✅ **Hidden Files** - The file browser shows dot files, with `Ctrl+Alt+H` to hide them
