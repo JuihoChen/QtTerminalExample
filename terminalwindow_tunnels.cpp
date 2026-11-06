@@ -113,7 +113,7 @@ void TerminalWindow::updateTunnelsButton()
     tunnelsButton->setText(tunnels.size() == 1 ? QString("🔀 1 tunnel")
                                                : QString("🔀 %1 tunnels").arg(tunnels.size()));
     QStringList lines;
-    for (const SSHTunnel &t : tunnels) lines << t.describe();
+    for (const SSHTunnel &t : tunnels) lines << t.describeNamed();
     tunnelsButton->setToolTip("Tunnels of this SSH tab:\n" + lines.join("\n") +
                               "\n\nClick to open or copy their addresses.");
     tunnelsButton->show();
@@ -129,7 +129,12 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
         return;
     }
 
+    // A rack's worth of BMC forwards would make a menu taller than the
+    // screen, so past a few tunnels each one gets a submenu instead
+    const bool submenus = tunnels.size() > 5;
+    QMenu *parentMenu = menu;
     for (const SSHTunnel &tunnel : tunnels) {
+        menu = parentMenu;
         // Disabled menu rows are drawn grey, so the state is spelled out in words
         QString state;
         bool listening = false;
@@ -139,34 +144,41 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             listening = !localPortFree(tunnel.listenPort);
             state = listening ? "🟢 Listening" : "⚪ Not listening";
         }
-        QAction *title = menu->addAction(QString("%1 (%2) · %3").arg(state, tunnel.flag(), tunnel.describe()));
-        title->setEnabled(false);
-        if (tunnel.type != SSHTunnel::Remote && !listening) {
-            title->setToolTip("Nothing is listening on this port: the login hasn't finished, "
-                              "or ssh could not open the tunnel (see the terminal)");
+        QString titleText = QString("%1 (%2) · %3").arg(state, tunnel.flag(), tunnel.describeNamed());
+        QString notListening = "Nothing is listening on this port: the login hasn't finished, "
+                               "or ssh could not open the tunnel (see the terminal)";
+        if (submenus) {
+            menu = parentMenu->addMenu(titleText);
+            menu->setToolTipsVisible(true);
+            if (tunnel.type != SSHTunnel::Remote && !listening) menu->menuAction()->setToolTip(notListening);
+        } else {
+            QAction *title = menu->addAction(titleText);
+            title->setEnabled(false);
+            if (tunnel.type != SSHTunnel::Remote && !listening) title->setToolTip(notListening);
         }
+        const QString indent = submenus ? QString() : QStringLiteral("    ");
 
         if (tunnel.type == SSHTunnel::Local) {
             bool https = tunnel.looksLikeHttps();
-            menu->addAction(QString("    🌐 Open %1").arg(webUrl(tunnel, https)), this, [tunnel, https]() {
+            menu->addAction(QString(indent + "🌐 Open %1").arg(webUrl(tunnel, https)), this, [tunnel, https]() {
                 openInBrowser(webUrl(tunnel, https));
             });
-            menu->addAction(QString("    🌐 Open %1").arg(webUrl(tunnel, !https)), this, [tunnel, https]() {
+            menu->addAction(QString(indent + "🌐 Open %1").arg(webUrl(tunnel, !https)), this, [tunnel, https]() {
                 openInBrowser(webUrl(tunnel, !https));
             });
             QString address = QString("localhost:%1").arg(tunnel.listenPort);
-            menu->addAction(QString("    📋 Copy address %1").arg(address), this, [this, address]() {
+            menu->addAction(QString(indent + "📋 Copy address %1").arg(address), this, [this, address]() {
                 QApplication::clipboard()->setText(address);
                 statusBar()->showMessage("Copied " + address, 3000);
             });
         } else if (tunnel.type == SSHTunnel::Dynamic) {
             QString proxy = QString("socks5://localhost:%1").arg(tunnel.listenPort);
-            menu->addAction(QString("    📋 Copy proxy address %1").arg(proxy), this, [this, proxy]() {
+            menu->addAction(QString(indent + "📋 Copy proxy address %1").arg(proxy), this, [this, proxy]() {
                 QApplication::clipboard()->setText(proxy);
                 statusBar()->showMessage("Copied " + proxy, 3000);
             });
             int port = tunnel.listenPort;
-            menu->addAction("    ❓ How to use this SOCKS proxy...", this, [this, port]() {
+            menu->addAction(indent + "❓ How to use this SOCKS proxy...", this, [this, port]() {
                 InWindowDialog::information(this, "SOCKS Proxy",
                     QString("This tab runs a SOCKS5 proxy on localhost:%1. Traffic sent through it "
                             "leaves from the server, so a browser can open any address the server "
@@ -181,13 +193,15 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             });
         } else {
             QString address = QString("localhost:%1").arg(tunnel.listenPort);
-            menu->addAction(QString("    📋 Copy server-side address %1").arg(address), this, [this, address]() {
+            menu->addAction(QString(indent + "📋 Copy server-side address %1").arg(address), this, [this, address]() {
                 QApplication::clipboard()->setText(address);
                 statusBar()->showMessage("Copied " + address + " (use it on the server)", 3000);
             });
         }
-        menu->addSeparator();
+        if (!submenus) menu->addSeparator();
     }
+    menu = parentMenu;
+    if (submenus) menu->addSeparator();
     QAction *note = menu->addAction("Tunnels close when the SSH session ends");
     note->setEnabled(false);
 }

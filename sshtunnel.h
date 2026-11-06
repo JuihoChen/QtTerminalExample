@@ -21,6 +21,7 @@ struct SSHTunnel {
     QString targetHost;  // Not used for Dynamic
     int targetPort;      // Not used for Dynamic
     QString webPath;     // Local only: page "Open in browser" goes to, e.g. "/base-view"
+    QString name;        // Optional label, e.g. the BMC's host name "node001-bmc"
     bool enabled;
 
     SSHTunnel() : type(Local), listenPort(8080), targetHost("localhost"), targetPort(80), enabled(true) {}
@@ -28,7 +29,7 @@ struct SSHTunnel {
     bool operator==(const SSHTunnel &other) const {
         return type == other.type && listenPort == other.listenPort &&
                (type == Dynamic || (targetHost == other.targetHost && targetPort == other.targetPort)) &&
-               webPath == other.webPath &&
+               webPath == other.webPath && name == other.name &&
                enabled == other.enabled;
     }
 
@@ -75,6 +76,11 @@ struct SSHTunnel {
         }
     }
 
+    // describe() led by the name when there is one, e.g. "node001-bmc: localhost:18443 → ..."
+    QString describeNamed() const {
+        return name.trimmed().isEmpty() ? describe() : name.trimmed() + ": " + describe();
+    }
+
     // The web path with a leading "/", or "/" when none is set
     QString urlPath() const {
         QString path = webPath.trimmed();
@@ -118,6 +124,7 @@ struct SSHTunnel {
             obj["targetPort"] = targetPort;
         }
         if (type == Local && !webPath.trimmed().isEmpty()) obj["webPath"] = webPath.trimmed();
+        if (!name.trimmed().isEmpty()) obj["name"] = name.trimmed();
         obj["enabled"] = enabled;
         return obj;
     }
@@ -130,6 +137,7 @@ struct SSHTunnel {
         t.targetHost = obj["targetHost"].toString(t.type == Dynamic ? QString() : QString("localhost"));
         t.targetPort = obj["targetPort"].toInt(0);
         t.webPath = t.type == Local ? obj["webPath"].toString() : QString();
+        t.name = obj["name"].toString();
         t.enabled = obj["enabled"].toBool(true);
         return t;
     }
