@@ -137,7 +137,20 @@ void QTermWidget::selectionChanged(bool textSelected)
 
 void QTermWidget::find()
 {
-    search(true, false);
+    // Search up from the current match (or from the bottom when nothing is
+    // selected), so the newest output is found first and refining the text
+    // keeps the current match when it still fits
+    Screen* screen = m_impl->m_terminalDisplay->screenWindow()->screen();
+    int startColumn = -1;
+    int startLine = m_impl->m_session->emulation()->lineCount() - 1;
+    int selectionColumn, selectionLine;
+    screen->getSelectionStart(selectionColumn, selectionLine);
+    if (screen->isSelected(selectionColumn, selectionLine))
+    {
+        screen->getSelectionEnd(startColumn, startLine);
+        startColumn++;
+    }
+    startSearch(false, startColumn, startLine);
 }
 
 void QTermWidget::findNext()
@@ -164,6 +177,11 @@ void QTermWidget::search(bool forwards, bool next)
         m_impl->m_terminalDisplay->screenWindow()->screen()->getSelectionStart(startColumn, startLine);
     }
 
+    startSearch(forwards, startColumn, startLine);
+}
+
+void QTermWidget::startSearch(bool forwards, int startColumn, int startLine)
+{
     //qDebug() << "current selection starts at: " << startColumn << startLine;
     //qDebug() << "current cursor position: " << m_impl->m_terminalDisplay->screenWindow()->cursorPosition();
 
@@ -310,6 +328,8 @@ void QTermWidget::init(int startnow)
     connect(m_searchBar, SIGNAL(searchCriteriaChanged()), this, SLOT(find()));
     connect(m_searchBar, SIGNAL(findNext()), this, SLOT(findNext()));
     connect(m_searchBar, SIGNAL(findPrevious()), this, SLOT(findPrevious()));
+    // Hand the keyboard back to the terminal when the bar closes
+    connect(m_searchBar, &SearchBar::closed, this, [this] { setFocus(Qt::OtherFocusReason); });
     m_layout->addWidget(m_searchBar);
     m_searchBar->hide();
 
@@ -337,7 +357,6 @@ void QTermWidget::init(int startnow)
     font.setPointSize(10);
     font.setStyleHint(QFont::TypeWriter);
     setTerminalFont(font);
-    m_searchBar->setFont(font);
 
     setScrollBarPosition(NoScrollBar);
     setKeyboardCursorShape(Emulation::KeyboardCursorShape::BlockCursor);

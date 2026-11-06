@@ -214,6 +214,9 @@ void TerminalWindow::setupMenus()
     
     editMenu->addAction("Select &All", this, &TerminalWindow::selectAllText, QKeySequence::SelectAll);
     editMenu->addSeparator();
+    // Not QKeySequence::Find: that is Ctrl+F, which bash uses to move forward a character
+    editMenu->addAction("&Find...", this, &TerminalWindow::findInTerminal, QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_F));
+    editMenu->addSeparator();
     
     editMenu->addAction("&Clear", this, [this]() {
         QTermWidget *terminal = getCurrentTerminal();
@@ -253,6 +256,35 @@ void TerminalWindow::setupMenus()
     aboutAction->setStatusTip("Show application information");
     connect(aboutAction, &QAction::triggered, this, &TerminalWindow::showAbout);
     helpMenu->addAction(aboutAction);
+
+    // One-click Find on the right end of the menu bar
+    // as a small outlined pill in the app's link blue, so it stands out from the menus
+    QWidget *findCorner = new QWidget(menuBar);
+    QHBoxLayout *findLayout = new QHBoxLayout(findCorner);
+    findLayout->setContentsMargins(0, 2, 8, 2);
+    findButton = new QToolButton(findCorner);
+    findButton->setText("🔍 Find");
+    findButton->setToolTip("Find in terminal (Ctrl+Shift+F)");
+    findButton->setFocusPolicy(Qt::NoFocus);
+    findButton->setCursor(Qt::PointingHandCursor);
+    findButton->setCheckable(true);  // stays pressed while the current tab's find bar is open
+    findButton->setStyleSheet(
+        "QToolButton { color: #0066cc; font-weight: bold; background: rgba(0, 102, 204, 0.07);"
+        "  border: 1px solid rgba(0, 102, 204, 0.45); border-radius: 10px; padding: 1px 10px; }"
+        "QToolButton:hover { background: rgba(0, 102, 204, 0.16); }"
+        "QToolButton:pressed { background: rgba(0, 102, 204, 0.26); }"
+        "QToolButton:checked { color: white; background: #0066cc; border-color: #0066cc; }"
+        "QToolButton:checked:hover { background: #0059b3; }");
+    // Some desktop styles (e.g. GTK) ignore a style sheet's text colour and
+    // weight, so set them on the font and palette too; updateFindButton()
+    // switches the text to white while the bar is open
+    QFont findFont = findButton->font();
+    findFont.setBold(true);
+    findButton->setFont(findFont);
+    findLayout->addWidget(findButton);
+    connect(findButton, &QToolButton::clicked, this, &TerminalWindow::toggleFindBar);
+    menuBar->setCornerWidget(findCorner, Qt::TopRightCorner);
+    updateFindButton();
 }
 
 void TerminalWindow::setupConnectionTree()

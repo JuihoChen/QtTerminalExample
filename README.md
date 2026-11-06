@@ -269,6 +269,7 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 - **Interrupt** - `Ctrl+Z` sends the interrupt signal (what `Ctrl+C` does in other terminals), because `Ctrl+C` copies. Suspending a program with `Ctrl+Z` isn't available
 - **Paste** - `Ctrl+V` in terminal or right-click → Paste
 - **Select All** - `Ctrl+A` or right-click → Select All (so `Ctrl+A` doesn't move to the start of the line)
+- **Find** - `Ctrl+Shift+F`, the 🔍 Find button at the right end of the menu bar, Edit → Find... or right-click → Find... opens a find bar under the terminal. It searches the screen and the scrollback, newest output first: `Enter` goes up to older matches and `Shift+Enter` comes back down. **Aa** matches case and **.\*** treats the text as a regular expression. `Esc` closes the bar and returns to the terminal
 - **Clear Terminal** - Right-click → Clear wipes the screen and the scrollback; `Ctrl+L` asks the shell to clear the screen and keeps the scrollback
 
 ### Font and Display
@@ -362,6 +363,8 @@ All SSH connections use optimized settings:
 | Select All | `Ctrl+A` | In Terminal |
 | Interrupt (like `Ctrl+C` elsewhere) | `Ctrl+Z` | In Terminal |
 | Clear screen (shell) | `Ctrl+L` | In Terminal |
+| Find in terminal | `Ctrl+Shift+F` | Global |
+| Older / newer match | `Enter` / `Shift+Enter` | Find bar |
 | **View Controls** |  |  |
 | Zoom In | `Ctrl++` | Global |
 | Zoom Out | `Ctrl+-` | Global |

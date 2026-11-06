@@ -69,6 +69,7 @@ void AboutDialog::setupUI() {
     shortcutsLayout->setHorizontalSpacing(18);
     shortcutsLayout->setVerticalSpacing(4);
     const QList<QPair<QString, QString>> shortcuts = {
+        {"Ctrl+Shift+F", "Find text in the terminal"},
         {"Ctrl+Shift+B", "Show or hide the file browser"},
         {"Ctrl+Alt+H",   "Show or hide hidden files"},
         {"F3 / F4",      "View / edit a file in the browser"},

@@ -325,6 +325,7 @@ private slots:
 
 private:
     void search(bool forwards, bool next);
+    void startSearch(bool forwards, int startColumn, int startLine);
     void setZoom(int step);
     void init(int startnow);
     TermWidgetImpl * m_impl;

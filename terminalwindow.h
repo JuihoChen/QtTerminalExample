@@ -24,6 +24,7 @@ class QDockWidget;
 class QStackedWidget;
 class QLabel;
 class QPushButton;
+class QToolButton;
 QT_END_NAMESPACE
 
 class FileBrowserPane;
@@ -54,6 +55,9 @@ private slots:
     void showContextMenu(const QPoint &pos);
     void copyClipboard();
     void selectAllText();
+    void findInTerminal();
+    void toggleFindBar();
+    void updateFindButton();
     void onTabChanged(int index);
     void onTerminalFinished();
     void chooseStartFolder();
@@ -153,6 +157,7 @@ private:
     QLabel *configPasswordLabel;
     QLabel *configKeyLabel;
     QPushButton *quickConnectButton;
+    QToolButton *findButton = nullptr;  // menu bar Find toggle
     QPushButton *editConnectionButton;
     QPushButton *deleteConnectionButton;
 
