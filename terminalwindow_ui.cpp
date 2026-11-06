@@ -274,7 +274,9 @@ void TerminalWindow::setupMenus()
         "QToolButton:hover { background: rgba(0, 102, 204, 0.16); }"
         "QToolButton:pressed { background: rgba(0, 102, 204, 0.26); }"
         "QToolButton:checked { color: white; background: #0066cc; border-color: #0066cc; }"
-        "QToolButton:checked:hover { background: #0059b3; }");
+        "QToolButton:checked:hover { background: #0059b3; }"
+        "QToolButton:disabled { color: #a0a0a0; background: transparent;"
+        "  border-color: rgba(0, 0, 0, 0.18); }");
     // Some desktop styles (e.g. GTK) ignore a style sheet's text colour and
     // weight, so set them on the font and palette too; updateFindButton()
     // switches the text to white while the bar is open

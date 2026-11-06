@@ -50,7 +50,7 @@ public:
 
 HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringList &folders,
                                QWidget *parent)
-    : QWidget(parent), m_rangeEdited(false),
+    : QWidget(parent), m_rangeEdited(false), m_endEdited(false),
       m_process(nullptr), m_workerThread(nullptr), m_worker(nullptr),
       m_scanning(false), m_stopRequested(false), m_section(Probes),
       m_rangeStart(0), m_rangeEnd(0), m_scanPort(22), m_done(0),
@@ -71,8 +71,14 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     m_endEdit = new QLineEdit(this);
     m_endEdit->setValidator(new QRegularExpressionValidator(ipPattern, this));
     m_endEdit->setPlaceholderText("192.168.1.254");
-    connect(m_startEdit, &QLineEdit::textEdited, this, [this]() { m_rangeEdited = true; });
-    connect(m_endEdit, &QLineEdit::textEdited, this, [this]() { m_rangeEdited = true; });
+    connect(m_startEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        m_rangeEdited = true;
+        followStartAddress(text);
+    });
+    connect(m_endEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        m_rangeEdited = true;
+        m_endEdited = !text.isEmpty();  // Clearing it lets it follow the start again
+    });
     QHBoxLayout *rangeRow = new QHBoxLayout();
     rangeRow->addWidget(m_startEdit);
     rangeRow->addWidget(new QLabel("to", this));
@@ -275,31 +281,94 @@ void HostScanTab::onScanFromChanged()
     if (!m_rangeEdited) setDefaultRange();
 }
 
-// Suggests the /24 around the scanning host
+// Suggests the subnet around the scanning host
 void HostScanTab::setDefaultRange()
 {
-    quint32 base = 0;
+    quint32 address = 0;
+    int prefixLength = 24;
     const SSHConnection *via = scanFromConnection();
     if (via) {
-        if (!parseIPv4(via->host.trimmed(), &base)) return;  // A host name: leave it to the user
+        // The remote host's netmask isn't known here, so assume a /24
+        if (!parseIPv4(via->host.trimmed(), &address)) return;  // A host name: leave it to the user
     } else {
-        for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-            if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack)) {
-                continue;
-            }
-            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    base = entry.ip().toIPv4Address();
-                    break;
-                }
-            }
-            if (base) break;
-        }
-        if (!base) return;
+        QNetworkAddressEntry entry;
+        if (!localScanAddress(&entry)) return;
+        address = entry.ip().toIPv4Address();
+        prefixLength = entry.prefixLength();
     }
-    base &= 0xFFFFFF00u;
-    m_startEdit->setText(formatIPv4(base | 1));
-    m_endEdit->setText(formatIPv4(base | 254));
+    // Use the real subnet when it is scannable; otherwise fall back to the /24
+    // around the address (point-to-point links, or subnets too big to scan)
+    if (prefixLength < 1 || prefixLength > 30 || (quint64(1) << (32 - prefixLength)) > kMaxAddresses) {
+        prefixLength = 24;
+    }
+    const quint32 mask = 0xFFFFFFFFu << (32 - prefixLength);
+    const quint32 network = address & mask;
+    const quint32 broadcast = network | ~mask;
+    m_startEdit->setText(formatIPv4(network + 1));
+    m_endEdit->setText(formatIPv4(broadcast - 1));
+}
+
+// Picks the IPv4 address of the network this computer is really on: an
+// interface that is up with a link, not a container/VM bridge or VPN, with
+// wired Ethernet preferred over Wi-Fi
+bool HostScanTab::localScanAddress(QNetworkAddressEntry *result)
+{
+    static const QStringList virtualPrefixes = {
+        "docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "lxcbr", "lxdbr", "cni",
+        "flannel", "cali", "podman", "tun", "tap", "wg", "tailscale", "zt", "utun",
+        "vethernet", "virtualbox", "vmware", "hyper-v"};
+    auto isVirtual = [](const QNetworkInterface &iface) {
+        if (iface.type() == QNetworkInterface::Virtual) return true;
+        const QString names[] = {iface.name().toLower(), iface.humanReadableName().toLower()};
+        for (const QString &name : names) {
+            for (const QString &prefix : virtualPrefixes) {
+                if (name.startsWith(prefix)) return true;
+            }
+        }
+        return false;
+    };
+
+    int bestScore = -1;
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
+        const auto flags = iface.flags();
+        if (!(flags & QNetworkInterface::IsUp) || (flags & QNetworkInterface::IsLoopBack)) continue;
+
+        int score;
+        if (!(flags & QNetworkInterface::IsRunning)) {
+            score = 0;  // Up but no link (e.g. docker0 with no containers): last resort
+        } else if (isVirtual(iface) || (flags & QNetworkInterface::IsPointToPoint)) {
+            score = 1;
+        } else if (iface.type() == QNetworkInterface::Wifi) {
+            score = 2;
+        } else {
+            score = 3;  // Wired Ethernet, or a type Qt can't tell
+        }
+        if (score <= bestScore) continue;
+
+        for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+            if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
+            if ((entry.ip().toIPv4Address() >> 16) == 0xA9FE) continue;  // 169.254 link-local
+            *result = entry;
+            bestScore = score;
+            break;
+        }
+    }
+    return bestScore >= 0;
+}
+
+// While the start address is typed, keeps the end at .254 of the same /24,
+// until the user types an end address of their own
+void HostScanTab::followStartAddress(const QString &text)
+{
+    if (m_endEdited) return;
+    const QStringList parts = text.split('.');
+    if (parts.size() < 4) return;  // The first three numbers aren't finished yet
+    for (int i = 0; i < 3; ++i) {
+        bool ok = false;
+        const int value = parts[i].toInt(&ok);
+        if (!ok || parts[i].size() > 3 || value > 255) return;
+    }
+    m_endEdit->setText(QStringList(parts.mid(0, 3)).join('.') + ".254");
 }
 
 bool HostScanTab::parseIPv4(const QString &text, quint32 *address)

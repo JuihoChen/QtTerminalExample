@@ -294,10 +294,16 @@ void TerminalWindow::updateFindButton()
     findButton->setChecked(open);
     QPalette palette = findButton->palette();
     const QColor text = open ? QColor(Qt::white) : QColor("#0066cc");
-    palette.setColor(QPalette::ButtonText, text);
-    palette.setColor(QPalette::WindowText, text);
-    palette.setColor(QPalette::Text, text);
+    // Grey when disabled (a tab with no terminal, such as SSH Scan), so it
+    // doesn't look clickable
+    for (QPalette::ColorRole role : {QPalette::ButtonText, QPalette::WindowText, QPalette::Text}) {
+        palette.setColor(QPalette::Active, role, text);
+        palette.setColor(QPalette::Inactive, role, text);
+        palette.setColor(QPalette::Disabled, role, QColor("#a0a0a0"));
+    }
     findButton->setPalette(palette);
+    findButton->setToolTip(findButton->isEnabled() ? "Find in terminal (Ctrl+Shift+F)"
+                                                   : "Find works in terminal tabs");
 }
 
 void TerminalWindow::findInTerminal()
