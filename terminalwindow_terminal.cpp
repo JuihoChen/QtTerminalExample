@@ -290,7 +290,14 @@ void TerminalWindow::updateFindButton()
     if (!findButton) return;
     QWidget *bar = findBarOf(getCurrentTerminal());
     findButton->setEnabled(getCurrentTerminal() != nullptr);
-    findButton->setChecked(bar && bar->isVisible());
+    const bool open = bar && bar->isVisible();
+    findButton->setChecked(open);
+    QPalette palette = findButton->palette();
+    const QColor text = open ? QColor(Qt::white) : QColor("#0066cc");
+    palette.setColor(QPalette::ButtonText, text);
+    palette.setColor(QPalette::WindowText, text);
+    palette.setColor(QPalette::Text, text);
+    findButton->setPalette(palette);
 }
 
 void TerminalWindow::findInTerminal()

@@ -304,9 +304,16 @@ void TerminalWindow::setupMenus()
         "QToolButton:pressed { background: rgba(0, 102, 204, 0.26); }"
         "QToolButton:checked { color: white; background: #0066cc; border-color: #0066cc; }"
         "QToolButton:checked:hover { background: #0059b3; }");
+    // Some desktop styles (e.g. GTK) ignore a style sheet's text colour and
+    // weight, so set them on the font and palette too; updateFindButton()
+    // switches the text to white while the bar is open
+    QFont findFont = findButton->font();
+    findFont.setBold(true);
+    findButton->setFont(findFont);
     findLayout->addWidget(findButton);
     connect(findButton, &QToolButton::clicked, this, &TerminalWindow::toggleFindBar);
     menuBar->setCornerWidget(findCorner, Qt::TopRightCorner);
+    updateFindButton();
 }
 
 void TerminalWindow::setupConnectionTree()
