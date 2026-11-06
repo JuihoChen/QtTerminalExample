@@ -20,20 +20,20 @@ void TerminalWindow::setupFileBrowserDock()
     fileBrowserDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea |
                                      Qt::BottomDockWidgetArea);
     // Qt's own float and close buttons are tiny, so give them bundled icons
-    // drawn larger and round grey backs, like the About dialog's close button
+    // drawn larger and a round grey back on hover, like the window's own buttons
     fileBrowserDock->setStyleSheet(
         "QDockWidget { titlebar-close-icon: url(:/icons/dock-close.png);"
         "  titlebar-normal-icon: url(:/icons/dock-float.png); }"
         "QDockWidget::close-button, QDockWidget::float-button {"
         "  subcontrol-origin: padding; subcontrol-position: right center;"
         "  min-width: 22px; min-height: 22px; icon-size: 12px;"
-        "  border: none; border-radius: 11px; background: rgba(0, 0, 0, 0.05); }"
+        "  border: none; border-radius: 11px; background: transparent; }"
         "QDockWidget::close-button { right: 3px; }"
         "QDockWidget::float-button { right: 29px; }"
         "QDockWidget::close-button:hover, QDockWidget::float-button:hover {"
-        "  background: rgba(0, 0, 0, 0.13); }"
+        "  background: rgba(0, 0, 0, 0.09); }"
         "QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {"
-        "  background: rgba(0, 0, 0, 0.20); }");
+        "  background: rgba(0, 0, 0, 0.16); }");
 
     fileBrowserStack = new QStackedWidget(fileBrowserDock);
     // Tabs without a server still get the local folder, under a note
