@@ -50,7 +50,7 @@ public:
 
 HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringList &folders,
                                QWidget *parent)
-    : QWidget(parent), m_rangeEdited(false),
+    : QWidget(parent), m_rangeEdited(false), m_endEdited(false),
       m_process(nullptr), m_workerThread(nullptr), m_worker(nullptr),
       m_scanning(false), m_stopRequested(false), m_section(Probes),
       m_rangeStart(0), m_rangeEnd(0), m_scanPort(22), m_done(0),
@@ -71,8 +71,14 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     m_endEdit = new QLineEdit(this);
     m_endEdit->setValidator(new QRegularExpressionValidator(ipPattern, this));
     m_endEdit->setPlaceholderText("192.168.1.254");
-    connect(m_startEdit, &QLineEdit::textEdited, this, [this]() { m_rangeEdited = true; });
-    connect(m_endEdit, &QLineEdit::textEdited, this, [this]() { m_rangeEdited = true; });
+    connect(m_startEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        m_rangeEdited = true;
+        followStartAddress(text);
+    });
+    connect(m_endEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        m_rangeEdited = true;
+        m_endEdited = !text.isEmpty();  // Clearing it lets it follow the start again
+    });
     QHBoxLayout *rangeRow = new QHBoxLayout();
     rangeRow->addWidget(m_startEdit);
     rangeRow->addWidget(new QLabel("to", this));
@@ -348,6 +354,21 @@ bool HostScanTab::localScanAddress(QNetworkAddressEntry *result)
         }
     }
     return bestScore >= 0;
+}
+
+// While the start address is typed, keeps the end at .254 of the same /24,
+// until the user types an end address of their own
+void HostScanTab::followStartAddress(const QString &text)
+{
+    if (m_endEdited) return;
+    const QStringList parts = text.split('.');
+    if (parts.size() < 4) return;  // The first three numbers aren't finished yet
+    for (int i = 0; i < 3; ++i) {
+        bool ok = false;
+        const int value = parts[i].toInt(&ok);
+        if (!ok || parts[i].size() > 3 || value > 255) return;
+    }
+    m_endEdit->setText(QStringList(parts.mid(0, 3)).join('.') + ".254");
 }
 
 bool HostScanTab::parseIPv4(const QString &text, quint32 *address)
