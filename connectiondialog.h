@@ -4,7 +4,7 @@
 
 #include <QDialog>
 #include <QLineEdit>
-#include <QSpinBox>
+#include "portcombobox.h"
 #include <QComboBox>
 #include <QPushButton>
 #include <QFormLayout>
@@ -48,7 +48,7 @@ private:
     QLineEdit *usernameEdit;
     QLineEdit *passwordEdit;  // Added password field
     QCheckBox *showPasswordCheck;  // Added show password checkbox
-    QSpinBox *portSpinBox;
+    PortComboBox *portCombo;
     QComboBox *folderCombo;
     QTabWidget *detailsTabs;
 

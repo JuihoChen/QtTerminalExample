@@ -19,6 +19,7 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
+#include "portcombobox.h"
 #include <QThread>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -80,15 +81,13 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     connect(m_startEdit, &QLineEdit::returnPressed, this, &HostScanTab::startScan);
     connect(m_endEdit, &QLineEdit::returnPressed, this, &HostScanTab::startScan);
 
-    m_portSpin = new QSpinBox(this);
-    m_portSpin->setRange(1, 65535);
-    m_portSpin->setValue(22);
+    m_portCombo = new PortComboBox(this);
     m_timeoutSpin = new QSpinBox(this);
     m_timeoutSpin->setRange(1, 10);
     m_timeoutSpin->setValue(1);
     m_timeoutSpin->setSuffix(" s");
     QHBoxLayout *optionsRow = new QHBoxLayout();
-    optionsRow->addWidget(m_portSpin);
+    optionsRow->addWidget(m_portCombo);
     optionsRow->addSpacing(16);
     optionsRow->addWidget(new QLabel("Timeout:", this));
     optionsRow->addWidget(m_timeoutSpin);
@@ -402,6 +401,11 @@ void HostScanTab::startScan()
         return;
     }
 
+    if (m_portCombo->value() == 0) {
+        InWindowDialog::warning(this, "Scan", "Enter a port between 1 and 65535.");
+        return;
+    }
+
     m_results->clear();
     m_rows.clear();
     m_macs.clear();
@@ -409,7 +413,7 @@ void HostScanTab::startScan()
     m_section = Probes;
     m_rangeStart = start;
     m_rangeEnd = end;
-    m_scanPort = m_portSpin->value();
+    m_scanPort = m_portCombo->value();
     m_done = 0;
     m_noPortCheck = false;
     m_noPing = false;
@@ -720,7 +724,7 @@ void HostScanTab::setScanning(bool scanning)
     m_stopButton->setEnabled(scanning);
     m_startEdit->setEnabled(!scanning);
     m_endEdit->setEnabled(!scanning);
-    m_portSpin->setEnabled(!scanning);
+    m_portCombo->setEnabled(!scanning);
     m_timeoutSpin->setEnabled(!scanning);
     m_scanFromCombo->setEnabled(!scanning);
     updateImportButton();
