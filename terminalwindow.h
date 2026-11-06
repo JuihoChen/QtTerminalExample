@@ -54,6 +54,7 @@ private slots:
     void showContextMenu(const QPoint &pos);
     void copyClipboard();
     void selectAllText();
+    void findInTerminal();
     void onTabChanged(int index);
     void onTerminalFinished();
     void chooseStartFolder();

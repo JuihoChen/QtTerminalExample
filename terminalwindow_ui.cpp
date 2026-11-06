@@ -214,6 +214,9 @@ void TerminalWindow::setupMenus()
     
     editMenu->addAction("Select &All", this, &TerminalWindow::selectAllText, QKeySequence::SelectAll);
     editMenu->addSeparator();
+    // Not QKeySequence::Find: that is Ctrl+F, which bash uses to move forward a character
+    editMenu->addAction("&Find...", this, &TerminalWindow::findInTerminal, QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_F));
+    editMenu->addSeparator();
     
     editMenu->addAction("&Clear", this, [this]() {
         QTermWidget *terminal = getCurrentTerminal();

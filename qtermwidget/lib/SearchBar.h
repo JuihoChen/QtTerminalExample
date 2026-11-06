@@ -43,12 +43,15 @@ signals:
     void highlightMatchesChanged(bool highlightMatches);
     void findNext();
     void findPrevious();
+    void closed();
 
 protected:
     void keyReleaseEvent(QKeyEvent* keyEvent) override;
+    void hideEvent(QHideEvent* event) override;
 
 private slots:
     void clearBackgroundColor();
+    void updateButtons();
 
 private:
     Ui::SearchBar widget;

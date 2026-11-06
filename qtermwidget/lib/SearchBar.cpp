@@ -27,30 +27,46 @@ SearchBar::SearchBar(QWidget *parent) : QWidget(parent)
 {
     widget.setupUi(this);
     setAutoFillBackground(true); // make it always opaque, especially inside translucent windows
+    setAttribute(Qt::WA_StyledBackground, true);
+    setStyleSheet(QStringLiteral(
+        "#SearchBar { background: palette(window); border-top: 1px solid rgba(0, 0, 0, 0.15); }"
+        "#SearchBar QToolButton { border: 1px solid transparent; border-radius: 4px;"
+        "  min-width: 22px; min-height: 22px; padding: 0px 4px; }"
+        "#SearchBar QToolButton:hover { background: rgba(0, 0, 0, 0.08); }"
+        "#SearchBar QToolButton:pressed { background: rgba(0, 0, 0, 0.14); }"
+        "#SearchBar QToolButton:checked { background: rgba(0, 102, 204, 0.14);"
+        "  border-color: rgba(0, 102, 204, 0.55); color: #0066cc; }"
+        "#SearchBar QToolButton:disabled { color: rgba(0, 0, 0, 0.3); }"
+        "#statusLabel { color: #666; padding-left: 4px; }"));
+
     connect(widget.closeButton, SIGNAL(clicked()), this, SLOT(hide()));
     connect(widget.searchTextEdit, SIGNAL(textChanged(QString)), this, SIGNAL(searchCriteriaChanged()));
     connect(widget.findPreviousButton, SIGNAL(clicked()), this, SIGNAL(findPrevious()));
     connect(widget.findNextButton, SIGNAL(clicked()), this, SIGNAL(findNext()));
 
     connect(this, SIGNAL(searchCriteriaChanged()), this, SLOT(clearBackgroundColor()));
+    connect(widget.searchTextEdit, &QLineEdit::textChanged, this, &SearchBar::updateButtons);
 
-    QMenu *optionsMenu = new QMenu(widget.optionsButton);
-    widget.optionsButton->setMenu(optionsMenu);
-
-    m_matchCaseMenuEntry = optionsMenu->addAction(tr("Match case"));
+    m_matchCaseMenuEntry = new QAction(tr("Aa"), this);
+    m_matchCaseMenuEntry->setToolTip(tr("Match case"));
     m_matchCaseMenuEntry->setCheckable(true);
-    m_matchCaseMenuEntry->setChecked(true);
+    m_matchCaseMenuEntry->setChecked(false);
+    widget.matchCaseButton->setDefaultAction(m_matchCaseMenuEntry);
     connect(m_matchCaseMenuEntry, SIGNAL(toggled(bool)), this, SIGNAL(searchCriteriaChanged()));
 
-
-    m_useRegularExpressionMenuEntry = optionsMenu->addAction(tr("Regular expression"));
+    m_useRegularExpressionMenuEntry = new QAction(tr(".*"), this);
+    m_useRegularExpressionMenuEntry->setToolTip(tr("Regular expression"));
     m_useRegularExpressionMenuEntry->setCheckable(true);
+    widget.regExpButton->setDefaultAction(m_useRegularExpressionMenuEntry);
     connect(m_useRegularExpressionMenuEntry, SIGNAL(toggled(bool)), this, SIGNAL(searchCriteriaChanged()));
 
-    m_highlightMatchesMenuEntry = optionsMenu->addAction(tr("Highlight all matches"));
+    // Kept for the API; highlighting every match isn't implemented, so it has no button
+    m_highlightMatchesMenuEntry = new QAction(tr("Highlight all matches"), this);
     m_highlightMatchesMenuEntry->setCheckable(true);
     m_highlightMatchesMenuEntry->setChecked(true);
     connect(m_highlightMatchesMenuEntry, SIGNAL(toggled(bool)), this, SIGNAL(highlightMatchesChanged(bool)));
+
+    updateButtons();
 }
 
 SearchBar::~SearchBar() {
@@ -86,9 +102,23 @@ void SearchBar::show()
 
 void SearchBar::noMatchFound()
 {
-    QPalette palette;
-    palette.setColor(widget.searchTextEdit->backgroundRole(), QColor(255, 128, 128));
-    widget.searchTextEdit->setPalette(palette);
+    widget.searchTextEdit->setStyleSheet(QStringLiteral(
+        "QLineEdit { background: #fdecea; border: 1px solid #e0a39c; border-radius: 3px; padding: 1px 2px; }"));
+    widget.statusLabel->setStyleSheet(QStringLiteral("color: #c0392b;"));
+    widget.statusLabel->setText(tr("No matches"));
+}
+
+void SearchBar::updateButtons()
+{
+    const bool hasText = !widget.searchTextEdit->text().isEmpty();
+    widget.findPreviousButton->setEnabled(hasText);
+    widget.findNextButton->setEnabled(hasText);
+}
+
+void SearchBar::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    Q_EMIT closed();
 }
 
 
@@ -96,13 +126,15 @@ void SearchBar::keyReleaseEvent(QKeyEvent* keyEvent)
 {
     if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter)
     {
+        // A terminal's newest output is at the bottom, so Enter keeps searching
+        // up into older output and Shift+Enter comes back down
         if (keyEvent->modifiers() == Qt::ShiftModifier)
         {
-            Q_EMIT findPrevious();
+            Q_EMIT findNext();
         }
         else
         {
-            Q_EMIT findNext();
+            Q_EMIT findPrevious();
         }
     }
     else if (keyEvent->key() == Qt::Key_Escape)
@@ -113,6 +145,7 @@ void SearchBar::keyReleaseEvent(QKeyEvent* keyEvent)
 
 void SearchBar::clearBackgroundColor()
 {
-    widget.searchTextEdit->setPalette(QWidget::window()->palette());
+    widget.searchTextEdit->setStyleSheet(QString());
+    widget.statusLabel->clear();
 
 }

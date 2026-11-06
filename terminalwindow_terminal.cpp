@@ -7,6 +7,7 @@
 #include <QFont>
 #include <QTimer>
 #include <QApplication>
+#include <QLineEdit>
 #include <QStatusBar>
 #include <QClipboard>
 #include <QDir>
@@ -241,6 +242,23 @@ void TerminalWindow::chooseStartFolder()
 QTermWidget* TerminalWindow::getCurrentTerminal()
 {
     return qobject_cast<QTermWidget*>(tabWidget->currentWidget());
+}
+
+void TerminalWindow::findInTerminal()
+{
+    QTermWidget *terminal = getCurrentTerminal();
+    if (!terminal) return;
+
+    // qtermwidget's find bar; if it's open but the terminal has the keyboard,
+    // go back to the bar instead of closing it
+    QWidget *searchBar = terminal->findChild<QWidget*>("SearchBar");
+    QLineEdit *searchText = searchBar ? searchBar->findChild<QLineEdit*>() : nullptr;
+    if (searchBar && searchText && searchBar->isVisible() && !searchBar->isAncestorOf(QApplication::focusWidget())) {
+        searchText->setFocus(Qt::ShortcutFocusReason);
+        searchText->selectAll();
+        return;
+    }
+    terminal->toggleShowSearchBar();
 }
 
 QString TerminalWindow::getNextTabTitle()

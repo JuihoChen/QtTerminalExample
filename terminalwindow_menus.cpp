@@ -15,6 +15,7 @@ void TerminalWindow::showContextMenu(const QPoint &pos)
     menu.addAction("Paste", terminal, &QTermWidget::pasteClipboard);
     menu.addSeparator();
     menu.addAction("Select All", this, &TerminalWindow::selectAllText);
+    menu.addAction("Find...", this, &TerminalWindow::findInTerminal);
     menu.addSeparator();
     menu.addAction("Clear", terminal, &QTermWidget::clear);
     menu.addSeparator();
