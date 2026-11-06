@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(QtTerminalExample VERSION 0.8.0)
+project(QtTerminalExample VERSION 0.9.0)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the build type." FORCE)
