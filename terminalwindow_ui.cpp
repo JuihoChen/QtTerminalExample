@@ -12,6 +12,95 @@
 #include <QFormLayout>
 #include <QSpacerItem>
 #include <QDockWidget>
+#include <QToolButton>
+#include <QEvent>
+#include <QTimer>
+
+namespace {
+
+// Keeps the browser-style "+" button sitting just after the last tab.
+// In document mode the tab bar spans the whole width, so the button is placed
+// from the last tab's rectangle. A blank corner widget reserves room at the
+// right end: when there are too many tabs to fit, the button parks there
+// instead of covering the tab scroll arrows.
+// Blank corner widget; QTabWidget sizes corners by their size hint
+class NewTabButtonRoom : public QWidget
+{
+public:
+    NewTabButtonRoom(int width, QWidget *parent) : QWidget(parent), roomWidth(width) {}
+    QSize sizeHint() const override { return QSize(roomWidth, 1); }
+
+private:
+    int roomWidth;
+};
+
+class NewTabButtonPlacer : public QObject
+{
+public:
+    NewTabButtonPlacer(QTabWidget *tabs, QToolButton *button, int room)
+        : QObject(button), tabs(tabs), bar(tabs->tabBar()), button(button), room(room)
+    {
+        tabs->installEventFilter(this);
+        bar->installEventFilter(this);
+        connect(bar, &QTabBar::tabMoved, this, [this]() { schedule(); });
+        connect(bar, &QTabBar::currentChanged, this, [this]() { schedule(); });
+        schedule();
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::LayoutRequest:
+            schedule();
+            break;
+        default:
+            break;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    // Wait until Qt has finished laying out the tabs before measuring them
+    void schedule()
+    {
+        if (pending) return;
+        pending = true;
+        QTimer::singleShot(0, this, [this]() { pending = false; place(); });
+    }
+
+    void place()
+    {
+        const QRect barRect = bar->geometry();
+        const int size = qMax(barRect.height() - 6, 20);
+        const int y = barRect.top() + (barRect.height() - size) / 2;
+
+        // Centered in the reserved room on the right
+        const int roomX = tabs->width() - room + (room - size) / 2;
+
+        int x = barRect.left() + 3;
+        if (bar->sizeHint().width() > bar->width()) {
+            // Tabs overflow and the bar shows scroll arrows: park in the room
+            x = roomX;
+        } else if (bar->count() > 0) {
+            const QRect last = bar->tabRect(bar->count() - 1);
+            x = qMin(bar->mapTo(tabs, last.topRight()).x() + 4, roomX);
+        }
+
+        button->setFixedSize(size, size);
+        button->move(x, y);
+        button->raise();
+    }
+
+    QTabWidget *tabs;
+    QTabBar *bar;
+    QToolButton *button;
+    int room;
+    bool pending = false;
+};
+
+} // namespace
 
 void TerminalWindow::setupUI()
 {
@@ -67,6 +156,24 @@ void TerminalWindow::setupUI()
     tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(tabWidget->tabBar(), &QTabBar::customContextMenuRequested, 
             this, &TerminalWindow::showTabContextMenu);
+
+    // Browser-style "+" button right after the last tab: same as "New Tab"
+    QToolButton *newTabButton = new QToolButton(tabWidget);
+    newTabButton->setText("+");
+    newTabButton->setToolTip("New Tab");
+    newTabButton->setAutoRaise(true);
+    newTabButton->setFocusPolicy(Qt::NoFocus);
+    QFont plusFont = newTabButton->font();
+    plusFont.setBold(true);
+    plusFont.setPointSizeF(plusFont.pointSizeF() * 1.3);
+    newTabButton->setFont(plusFont);
+    connect(newTabButton, &QToolButton::clicked, this, &TerminalWindow::newTab);
+
+    const int newTabButtonRoomWidth = 34;
+    tabWidget->setCornerWidget(new NewTabButtonRoom(newTabButtonRoomWidth, tabWidget),
+                               Qt::TopRightCorner);
+
+    new NewTabButtonPlacer(tabWidget, newTabButton, newTabButtonRoomWidth);
 
     mainSplitter->addWidget(tabWidget);
     
