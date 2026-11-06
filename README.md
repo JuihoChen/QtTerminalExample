@@ -14,6 +14,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔑 Password Authentication** - Secure password storage with show/hide toggle (optional)
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔀 SSH Tunnels** - Per-connection port forwards (`-L`, `-R`) and SOCKS proxies (`-D`) that start with the SSH tab, with "Open in browser" for web pages
+- **🖥️ BMC discovery** - The SSH scan can find BMCs (Redfish on port 443) through a head node and turn them into that node's tunnels
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
 - **🙈 Hidden Saved Passwords** - Saved passwords go to `sshpass -e` through the environment, never shown on screen, in shell history or in `ps`
 - **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
@@ -130,6 +131,7 @@ A connection can carry port forwards that start with its SSH tab. Right-click th
   - **Remote (-R)** opens a port on the server that leads back to a host this PC can reach (`localhost` is this PC), for example a dev server on your machine.
 - **🧦 Add SOCKS Proxy** adds a **SOCKS (-D)** row: a proxy on this PC whose traffic leaves from the server. Point a browser at it to open many BMCs or internal pages by their real IPs without a forward for each.
 - **Web path** (optional, local forwards only) is the page **Open in browser** goes to, such as `/base-view` for BCM's Base View (listen `18081`, destination `localhost` port `8081`).
+- **Name** (optional) labels the tunnel in the tunnels menu, such as a BMC's host name. **🔀 Forward BMCs...** in the SSH Scan tab fills it in.
 - **On** turns a row off without deleting it. The hint under the table says what the selected row does, and rows with mistakes (empty host, a port used twice) are flagged when you press OK.
 
 When the SSH tab opens, the enabled tunnels are added to its `ssh` command. A local port that is already taken (by another program, or another tab of the same connection) is left out with a clear message, and the login goes ahead without it. If ssh itself can't open a forward, such as a remote port that's taken on the server, the status bar says so and the details are in the terminal.
@@ -174,6 +176,12 @@ Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but
 - **Results** - One row per host that answered a ping, has the port open, or is in the ARP table, with its **IP address**, **MAC address** and **SSH open**. MAC addresses come from the scanning host's ARP table, so they show only for hosts on its own subnet (and for the scanning host itself). Hosts with the port open start checked; hosts that already have a connection are marked **(saved)**. When the port isn't open, the SSH column says why: **No (refused)** means the host answered but nothing listens on the port, **No (timed out)** means no answer within the timeout (often a firewall dropping it; try a longer timeout), and **No (unreachable)** means the network reported the host unreachable. Hover over the value for the same explanation.
 - **Errors** - If logging in to the scan-from connection fails, or the scan script fails or is cut off there, the tab says so in red with the exit status and the server's error output (for example, an account with no login shell). Hosts found before a failure stay listed.
 - **Import** - Pick a folder and username and press **Import**. While the File Browser panel is open, these options sit in it (titled **Import Scanned Hosts - SSH Scan**) so the window keeps the same layout as on terminal tabs; with the panel closed they're at the bottom of the scan tab. Each checked host becomes an SSH connection named after its IP address, using the scanned port. Hosts that already have a connection are skipped. Imported connections connect directly from this computer; going through the jump host isn't supported yet.
+- **Find BMCs** - Tick it to also check port 443 on every host and ask each web server there for Redfish (`https://IP/redfish/v1/`), the management API that BMCs serve (NVIDIA, OpenBMC, iDRAC, iLO, XClarity and others). Two more columns appear: **Name**, the host's name from `/etc/hosts` or DNS on the scanning host (on a BCM head node, the BMC names it knows), and **BMC**, with the vendor and product it reports, **Web only (443)** for a web server that isn't one, or **Web (443)** when the scanning host has no `curl` to ask. Sort by the BMC column to put them together.
+- **🔀 Forward BMCs...** - After a BMC scan through a connection (such as a BCM head node), this button turns the BMCs into tunnels on that connection, so this PC can open their web pages. Redfish BMCs start checked, and ones the connection forwards already are greyed out. Choose either:
+  - **A local port for each checked BMC**: one `-L` forward per BMC to its port 443, on free local ports from 18443 up, named after the BMC. Open each from the SSH tab's **🔀 N tunnels** button (more than five tunnels get a submenu each).
+  - **One SOCKS proxy for all of them**: a single `-D` tunnel (or the one the connection already has), simplest for a whole rack. Set a browser's SOCKS5 proxy to it, then open each BMC by its IP; **📋 Copy BMC addresses** copies their `https://IP/` addresses.
+
+  Leave **Open an SSH tab to ... now** ticked to start them right away. The tunnels are saved with the connection, so they start with its SSH tabs from then on; edit or remove them with **🔀 Tunnels...**.
 
 ## Requirements
 

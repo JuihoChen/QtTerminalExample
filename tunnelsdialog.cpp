@@ -17,7 +17,7 @@
 #include <QVBoxLayout>
 
 namespace {
-enum TunnelColumn { ColOn, ColType, ColListen, ColHost, ColPort, ColPath, ColCount };
+enum TunnelColumn { ColOn, ColName, ColType, ColListen, ColHost, ColPort, ColPath, ColCount };
 }
 
 TunnelsDialog::TunnelsDialog(const SSHConnection &connection, QWidget *parent)
@@ -25,7 +25,7 @@ TunnelsDialog::TunnelsDialog(const SSHConnection &connection, QWidget *parent)
 {
     setWindowTitle(QString("Tunnels: %1").arg(connection.name));
     setModal(true);
-    resize(720, 420);
+    resize(820, 420);
 
     QWidget *tab = this;
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -40,13 +40,15 @@ TunnelsDialog::TunnelsDialog(const SSHConnection &connection, QWidget *parent)
     layout->addWidget(intro);
 
     tunnelTable = new QTableWidget(0, ColCount, tab);
-    tunnelTable->setHorizontalHeaderLabels({"On", "Type", "Listen port", "Destination host", "Port", "Web path"});
+    tunnelTable->setHorizontalHeaderLabels({"On", "Name", "Type", "Listen port", "Destination host", "Port", "Web path"});
     tunnelTable->verticalHeader()->setVisible(false);
     tunnelTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     tunnelTable->setSelectionMode(QAbstractItemView::SingleSelection);
     tunnelTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     QHeaderView *header = tunnelTable->horizontalHeader();
     header->setSectionResizeMode(ColOn, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(ColName, QHeaderView::Interactive);
+    tunnelTable->setColumnWidth(ColName, 120);
     header->setSectionResizeMode(ColType, QHeaderView::ResizeToContents);
     header->setSectionResizeMode(ColListen, QHeaderView::ResizeToContents);
     header->setSectionResizeMode(ColHost, QHeaderView::Stretch);
@@ -54,6 +56,8 @@ TunnelsDialog::TunnelsDialog(const SSHConnection &connection, QWidget *parent)
     header->setSectionResizeMode(ColPath, QHeaderView::Interactive);
     tunnelTable->setColumnWidth(ColPath, 110);
     header->setHighlightSections(false);
+    tunnelTable->horizontalHeaderItem(ColName)->setToolTip(
+        "Optional: what the tunnel leads to, such as a BMC's host name. Shown in the tunnels menu.");
     tunnelTable->horizontalHeaderItem(ColListen)->setToolTip(
         "Local and SOCKS: the port on this PC. Remote: the port opened on the server.");
     tunnelTable->horizontalHeaderItem(ColHost)->setToolTip(
@@ -105,6 +109,11 @@ void TunnelsDialog::addTunnelRow(const SSHTunnel &tunnel)
     onItem->setToolTip("Start this forward with the SSH tab");
     tunnelTable->setItem(row, ColOn, onItem);
 
+    QLineEdit *nameEdit = new QLineEdit(tunnelTable);
+    nameEdit->setText(tunnel.name);
+    nameEdit->setPlaceholderText("(optional)");
+    tunnelTable->setCellWidget(row, ColName, nameEdit);
+
     QComboBox *typeCombo = new QComboBox(tunnelTable);
     typeCombo->addItem(SSHTunnel::typeName(SSHTunnel::Local), SSHTunnel::Local);
     typeCombo->addItem(SSHTunnel::typeName(SSHTunnel::Remote), SSHTunnel::Remote);
@@ -143,7 +152,7 @@ void TunnelsDialog::addTunnelRow(const SSHTunnel &tunnel)
         updateTunnelRow(tunnelRowOf(typeCombo));
         updateTunnelHint();
     });
-    for (QWidget *w : QList<QWidget*>{typeCombo, listenSpin, hostEdit, portSpin, pathEdit}) {
+    for (QWidget *w : QList<QWidget*>{nameEdit, typeCombo, listenSpin, hostEdit, portSpin, pathEdit}) {
         w->installEventFilter(this);
     }
     connect(listenSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, selectRow]() { selectRow(); updateTunnelHint(); });
@@ -167,7 +176,7 @@ bool TunnelsDialog::eventFilter(QObject *watched, QEvent *event)
 int TunnelsDialog::tunnelRowOf(QWidget *cellWidget) const
 {
     for (int row = 0; row < tunnelTable->rowCount(); ++row) {
-        for (int col = ColType; col < ColCount; ++col) {
+        for (int col = ColName; col < ColCount; ++col) {
             if (tunnelTable->cellWidget(row, col) == cellWidget) return row;
         }
     }
@@ -193,6 +202,9 @@ SSHTunnel TunnelsDialog::tunnelFromRow(int row) const
     } else {
         tunnel.targetHost = hostEdit->text().trimmed();
         tunnel.targetPort = portSpin->value();
+    }
+    if (QLineEdit *nameEdit = qobject_cast<QLineEdit*>(tunnelTable->cellWidget(row, ColName))) {
+        tunnel.name = nameEdit->text().trimmed();
     }
     QLineEdit *pathEdit = qobject_cast<QLineEdit*>(tunnelTable->cellWidget(row, ColPath));
     if (pathEdit && tunnel.type == SSHTunnel::Local) tunnel.webPath = pathEdit->text().trimmed();

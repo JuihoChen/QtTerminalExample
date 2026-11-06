@@ -39,6 +39,7 @@ private slots:
         SSHTunnel web;
         web.listenPort = 18081; web.targetHost = "localhost"; web.targetPort = 8081;
         web.webPath = "/base-view";
+        web.name = "Base View";
         SSHTunnel socks;
         socks.type = SSHTunnel::Dynamic; socks.listenPort = 1080;
         socks.targetHost.clear(); socks.targetPort = 0;
@@ -52,6 +53,9 @@ private slots:
         QVERIFY(loaded == c);
         QCOMPARE(loaded.tunnels.size(), 3);
         QCOMPARE(loaded.tunnels.at(0).urlPath(), QString("/base-view"));
+        QCOMPARE(loaded.tunnels.at(0).name, QString("Base View"));
+        QVERIFY(loaded.tunnels.at(0).describeNamed().startsWith("Base View: localhost:18081"));
+        QCOMPARE(loaded.tunnels.at(1).name, QString());
         QCOMPARE(loaded.tunnels.at(1).type, SSHTunnel::Dynamic);
         QVERIFY(!loaded.tunnels.at(2).enabled);
     }

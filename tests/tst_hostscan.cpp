@@ -68,13 +68,55 @@ private slots:
         QVERIFY(script.trimmed().endsWith("echo END"));
     }
 
+    void scriptIsValidShell_data()
+    {
+        QTest::addColumn<bool>("findBmcs");
+        QTest::newRow("ssh only") << false;
+        QTest::newRow("find BMCs") << true;
+    }
+
     void scriptIsValidShell()
     {
+        QFETCH(bool, findBmcs);
+        QString script = HostScanTab::scanScript(1, 2, 22, 1, findBmcs);
+        QCOMPARE(script.section('\n', 0, 0).endsWith(findBmcs ? " W=1" : " W="), true);
         QProcess sh;
-        sh.start("/bin/sh", QStringList() << "-n" << "-c"
-                 << HostScanTab::scanScript(1, 2, 22, 1));
+        sh.start("/bin/sh", QStringList() << "-n" << "-c" << script);
         QVERIFY(sh.waitForFinished(5000));
         QCOMPARE(sh.exitCode(), 0);
+    }
+
+    // The service roots of a few real BMCs, shortened
+    void redfishSummary_data()
+    {
+        QTest::addColumn<QByteArray>("json");
+        QTest::addColumn<QString>("summary");
+        QTest::newRow("vendor and product")
+            << QByteArray(R"({"@odata.id":"/redfish/v1","Vendor":"NVIDIA","Product":"GB300 NVL72","RedfishVersion":"1.17.0"})")
+            << "NVIDIA GB300 NVL72";
+        QTest::newRow("product repeats vendor")
+            << QByteArray(R"({"Vendor":"Dell","Product":"Dell iDRAC9"})") << "Dell iDRAC9";
+        QTest::newRow("version only")
+            << QByteArray(R"({"@odata.id":"/redfish/v1","RedfishVersion":"1.6.0"})") << "Redfish 1.6.0";
+        QTest::newRow("not json") << QByteArray("<html>login</html>") << QString();
+    }
+
+    void redfishSummary()
+    {
+        QFETCH(QByteArray, json);
+        QFETCH(QString, summary);
+        QCOMPARE(HostScanTab::redfishSummary(json), summary);
+    }
+
+    void pickLocalPorts()
+    {
+        QSet<int> taken = {18443, 18445};
+        auto all = [](int) { return true; };
+        QCOMPARE(HostScanTab::pickLocalPorts(3, 18443, taken, all), (QList<int>{18444, 18446, 18447}));
+        auto noOdd = [](int port) { return port % 2 == 0; };
+        QCOMPARE(HostScanTab::pickLocalPorts(2, 18443, taken, noOdd), (QList<int>{18444, 18446}));
+        // Never below 1024, which needs admin rights
+        QCOMPARE(HostScanTab::pickLocalPorts(1, 443, QSet<int>(), all), QList<int>{1024});
     }
 
     // Runs the scan script on this machine against 127.0.0.1 and a port

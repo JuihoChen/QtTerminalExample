@@ -4,32 +4,56 @@
 #include "sftpworker.h"
 #include "inwindowdialog.h"
 
+#include <QApplication>
+#include <QButtonGroup>
+#include <QClipboard>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QNetworkInterface>
+#include <QNetworkProxy>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
+#include <QTcpServer>
 #include "portcombobox.h"
 #include <QThread>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace {
 
 const quint32 kMaxAddresses = 4096;  // A /20; larger ranges take too long
 const int kParallelProbes = 64;
 
-enum Column { IpColumn, MacColumn, SshColumn };
+enum Column { IpColumn, MacColumn, SshColumn, NameColumn, BmcColumn };
+
+// Whether this PC can listen on the port, as ssh -L would (on loopback)
+bool canBindLocally(int port)
+{
+    QTcpServer probe;
+    probe.setProxy(QNetworkProxy::NoProxy);
+    if (!probe.listen(QHostAddress::LocalHost, static_cast<quint16>(port))) return false;
+    probe.close();
+    return true;
+}
 
 // Sorts the IP column by address rather than as text
 class ResultItem : public QTreeWidgetItem
@@ -54,7 +78,8 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
       m_process(nullptr), m_workerThread(nullptr), m_worker(nullptr),
       m_scanning(false), m_stopRequested(false), m_section(Probes),
       m_rangeStart(0), m_rangeEnd(0), m_scanPort(22), m_done(0),
-      m_noPortCheck(false), m_noPing(false), m_sawEnd(false), m_commandStarted(false)
+      m_noPortCheck(false), m_noPing(false), m_sawEnd(false), m_commandStarted(false),
+      m_findBmcs(false), m_noCurl(false)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     m_layout = layout;
@@ -97,6 +122,13 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     optionsRow->addSpacing(16);
     optionsRow->addWidget(new QLabel("Timeout:", this));
     optionsRow->addWidget(m_timeoutSpin);
+    optionsRow->addSpacing(16);
+    m_bmcCheck = new QCheckBox("Find BMCs", this);
+    m_bmcCheck->setToolTip("Also check port 443 and ask each web server for Redfish, the management "
+                           "API of BMCs (iDRAC, iLO, XClarity, OpenBMC, NVIDIA and others).\n"
+                           "Scanning through a head node, the BMCs found can then be added to "
+                           "its tunnels, to open their web pages from this PC.");
+    optionsRow->addWidget(m_bmcCheck);
     optionsRow->addStretch();
     form->addRow("SSH port:", optionsRow);
 
@@ -126,7 +158,7 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
 
     // Results
     m_results = new QTreeWidget(this);
-    m_results->setHeaderLabels(QStringList() << "IP address" << "MAC address" << "SSH open");
+    m_results->setHeaderLabels(QStringList() << "IP address" << "MAC address" << "SSH open" << "Name" << "BMC");
     m_results->setRootIsDecorated(false);
     m_results->setSortingEnabled(true);
     m_results->sortByColumn(IpColumn, Qt::AscendingOrder);
@@ -134,13 +166,25 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     m_results->header()->setSectionResizeMode(IpColumn, QHeaderView::ResizeToContents);
     m_results->header()->setSectionResizeMode(MacColumn, QHeaderView::ResizeToContents);
     m_results->setColumnWidth(IpColumn, 160);
+    m_results->setColumnWidth(SshColumn, 150);
+    m_results->setColumnWidth(NameColumn, 150);
+    m_results->setColumnHidden(NameColumn, true);
+    m_results->setColumnHidden(BmcColumn, true);
     connect(m_results, &QTreeWidget::itemChanged, this, &HostScanTab::updateImportButton);
     layout->addWidget(m_results, 1);
 
     m_statusLabel = new QLabel("Hosts that answer a ping, have the port open, or appear in the "
                                "ARP table are listed.", this);
     m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
+    m_forwardButton = new QPushButton("🔀 Forward BMCs...", this);
+    m_forwardButton->setToolTip("Add the BMCs found to the tunnels of the connection the scan ran "
+                                "through, to open their web pages from this PC");
+    m_forwardButton->hide();
+    connect(m_forwardButton, &QPushButton::clicked, this, &HostScanTab::forwardBmcs);
+    QHBoxLayout *statusRow = new QHBoxLayout();
+    statusRow->addWidget(m_statusLabel, 1);
+    statusRow->addWidget(m_forwardButton, 0, Qt::AlignTop);
+    layout->addLayout(statusRow);
 
     // Import
     QGroupBox *importGroup = new QGroupBox("Import checked hosts as SSH connections", this);
@@ -204,6 +248,8 @@ void HostScanTab::setConnections(const QList<SSHConnection> &connections, const 
     m_folderCombo->addItems(folders);
     if (!folder.isEmpty()) setImportFolder(folder);
 
+    updateForwardButton();  // The connection scanned through may be gone
+
     // Refresh the "(saved)" marks on the results
     QSignalBlocker blocker(m_results);
     for (auto it = m_rows.constBegin(); it != m_rows.constEnd(); ++it) {
@@ -264,6 +310,16 @@ const SSHConnection *HostScanTab::scanFromConnection() const
 {
     int index = m_scanFromCombo->currentData().toInt();
     return index >= 0 && index < m_connections.size() ? &m_connections[index] : nullptr;
+}
+
+// The saved connection the last scan ran through, if it still exists
+const SSHConnection *HostScanTab::scannedThrough() const
+{
+    if (m_scanFromKey.isEmpty()) return nullptr;
+    for (const SSHConnection &conn : m_connections) {
+        if (conn.folder + '\n' + conn.name == m_scanFromKey) return &conn;
+    }
+    return nullptr;
 }
 
 void HostScanTab::onScanFromChanged()
@@ -401,31 +457,52 @@ QString HostScanTab::formatIPv4(quint32 address)
 // bash's /dev/tcp with coreutils timeout for the port check (timeout exits
 // 124 when time runs out), or nc when those are missing. Error messages are
 // matched in English, hence LC_ALL=C.
-QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeoutSeconds)
+//
+// With findBmcs, a host with port 443 open also prints "WEB <ip>", its name
+// from /etc/hosts or DNS as "NAME <ip> <name>", and, when it answers a Redfish
+// request (the standard BMC management API), "REDFISH <ip> <service root JSON>"
+// on one line. "NOCURL" means Redfish could not be asked.
+QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeoutSeconds, bool findBmcs)
 {
     QString script = QString(
-        "S=%1 E=%2 P=%3 T=%4 J=%5\n"
+        "S=%1 E=%2 P=%3 T=%4 J=%5 W=%6\n"
         "B=$(command -v bash 2>/dev/null); command -v timeout >/dev/null 2>&1 || B=\n"
         "NC=$(command -v nc 2>/dev/null)\n"
         "[ -n \"$B$NC\" ] || echo NOPORTCHECK\n"
         "command -v ping >/dev/null 2>&1 || echo NOPING\n"
+        "CU=$(command -v curl 2>/dev/null); [ -n \"$W\" ] && [ -z \"$CU\" ] && echo NOCURL\n"
+        "GE=$(command -v getent 2>/dev/null)\n"
+        "chk() {\n"
+        "  if [ -n \"$B\" ]; then\n"
+        "    r=$(LC_ALL=C timeout \"$T\" \"$B\" -c 'exec 3<>\"/dev/tcp/$0/$1\"' \"$1\" \"$2\" 2>&1 >/dev/null); c=$?\n"
+        "  else\n"
+        "    r=$(LC_ALL=C nc -v -z -w \"$T\" \"$1\" \"$2\" 2>&1 >/dev/null); c=$?\n"
+        "  fi\n"
+        "  if [ \"$c\" -eq 0 ]; then s=OPEN\n"
+        "  elif [ \"$c\" -eq 124 ]; then s=TIMEOUT\n"
+        "  else case \"$r\" in\n"
+        "    *efused*) s=REFUSED;;\n"
+        "    *'timed out'*|*'in progress'*) s=TIMEOUT;;\n"
+        "    *'No route'*|*nreachable*) s=UNREACH;;\n"
+        "    *) s=CLOSED;;\n"
+        "  esac; fi\n"
+        "}\n"
+        "bmc() {\n"
+        "  echo \"WEB $1\"\n"
+        "  [ -n \"$GE\" ] && \"$GE\" hosts \"$1\" | { read -r _ n _; [ -n \"$n\" ] && echo \"NAME $1 $n\"; }\n"
+        "  if [ -n \"$CU\" ]; then\n"
+        "    j=$(\"$CU\" -sk -m $((T+3)) \"https://$1/redfish/v1/\" 2>/dev/null | tr -d '\\r\\n')\n"
+        "    case \"$j\" in *RedfishVersion*|*'\"@odata.id\"'*) echo \"REDFISH $1 $j\";; esac\n"
+        "  fi\n"
+        "}\n"
         "probe() {\n"
         "  ping -c 1 -W \"$T\" \"$1\" >/dev/null 2>&1 && echo \"UP $1\"\n"
-        "  if [ -n \"$B\" ]; then\n"
-        "    r=$(LC_ALL=C timeout \"$T\" \"$B\" -c 'exec 3<>\"/dev/tcp/$0/$1\"' \"$1\" \"$P\" 2>&1 >/dev/null); c=$?\n"
-        "  elif [ -n \"$NC\" ]; then\n"
-        "    r=$(LC_ALL=C nc -v -z -w \"$T\" \"$1\" \"$P\" 2>&1 >/dev/null); c=$?\n"
-        "  fi\n"
         "  if [ -n \"$B$NC\" ]; then\n"
-        "    if [ \"$c\" -eq 0 ]; then s=OPEN\n"
-        "    elif [ \"$c\" -eq 124 ]; then s=TIMEOUT\n"
-        "    else case \"$r\" in\n"
-        "      *efused*) s=REFUSED;;\n"
-        "      *'timed out'*|*'in progress'*) s=TIMEOUT;;\n"
-        "      *'No route'*|*nreachable*) s=UNREACH;;\n"
-        "      *) s=CLOSED;;\n"
-        "    esac; fi\n"
-        "    echo \"$s $1\"\n"
+        "    chk \"$1\" \"$P\"; echo \"$s $1\"\n"
+        "    if [ -n \"$W\" ]; then\n"
+        "      [ \"$P\" = 443 ] || chk \"$1\" 443\n"
+        "      [ \"$s\" = OPEN ] && bmc \"$1\"\n"
+        "    fi\n"
         "  fi\n"
         "  echo \"DONE $1\"\n"
         "}\n"
@@ -445,8 +522,26 @@ QString HostScanTab::scanScript(quint32 start, quint32 end, int port, int timeou
         "  done\n"
         "fi\n"
         "echo END\n")
-        .arg(start).arg(end).arg(port).arg(timeoutSeconds).arg(kParallelProbes);
+        .arg(start).arg(end).arg(port).arg(timeoutSeconds).arg(kParallelProbes)
+        .arg(findBmcs ? "1" : "");
     return script;
+}
+
+// The vendor and product a Redfish service root names, e.g. "NVIDIA GB300 BMC",
+// or "Redfish 1.11.0" when it names neither
+QString HostScanTab::redfishSummary(const QByteArray &serviceRoot)
+{
+    QJsonObject root = QJsonDocument::fromJson(serviceRoot).object();
+    if (root.isEmpty()) return QString();
+    QString vendor = root.value("Vendor").toString().trimmed();
+    QString product = root.value("Product").toString().trimmed();
+    QString text = product.startsWith(vendor, Qt::CaseInsensitive) ? product
+                 : QString(vendor + ' ' + product).trimmed();
+    if (text.isEmpty()) {
+        QString version = root.value("RedfishVersion").toString().trimmed();
+        text = version.isEmpty() ? QStringLiteral("Redfish") : "Redfish " + version;
+    }
+    return text;
 }
 
 void HostScanTab::startScan()
@@ -490,14 +585,22 @@ void HostScanTab::startScan()
     m_commandStarted = false;
     m_stderr.clear();
     m_ports.clear();
+    m_web.clear();
+    m_redfish.clear();
+    m_names.clear();
+    m_noCurl = false;
+    m_findBmcs = m_bmcCheck->isChecked();
+    m_results->setColumnHidden(NameColumn, !m_findBmcs);
+    m_results->setColumnHidden(BmcColumn, !m_findBmcs);
     m_stopRequested = false;
     m_progress->setRange(0, int(end - start + 1));
     m_progress->setValue(0);
     m_results->headerItem()->setText(SshColumn, QString("SSH open (port %1)").arg(m_scanPort));
     setScanning(true);
 
-    QString script = scanScript(start, end, m_scanPort, m_timeoutSpin->value());
+    QString script = scanScript(start, end, m_scanPort, m_timeoutSpin->value(), m_findBmcs);
     const SSHConnection *via = scanFromConnection();
+    m_scanFromKey = via ? via->folder + '\n' + via->name : QString();
     m_scanFromName = via ? QString("%1 (%2)").arg(via->name, via->host) : QStringLiteral("this computer");
 
     if (!via) {
@@ -606,10 +709,27 @@ void HostScanTab::handleLine(const QString &line)
     QStringList fields = line.simplified().split(' ');
     quint32 address = 0;
 
+    // A Redfish reply is JSON with spaces of its own: "REDFISH <ip> {...}"
+    if (m_section == Probes && fields.size() >= 3 && fields[0] == "REDFISH"
+        && parseIPv4(fields[1], &address)) {
+        QString summary = redfishSummary(line.section(' ', 2).toUtf8());
+        if (!summary.isEmpty()) {
+            m_redfish.insert(address, summary);
+            setRowBmc(address);
+        }
+        return;
+    }
+    if (m_section == Probes && fields.size() == 3 && fields[0] == "NAME" && parseIPv4(fields[1], &address)) {
+        m_names.insert(address, fields[2]);
+        setRowBmc(address);
+        return;
+    }
+
     switch (m_section) {
     case Probes:
         if (line == "NOPORTCHECK") { m_noPortCheck = true; return; }
         if (line == "NOPING") { m_noPing = true; return; }
+        if (line == "NOCURL") { m_noCurl = true; return; }
         if (fields.size() != 2 || !parseIPv4(fields[1], &address)) {
             // Not from the script (a login message, say); kept for error reports
             m_stderr = (m_stderr + line.toUtf8() + '\n').right(4096);
@@ -626,6 +746,9 @@ void HostScanTab::handleLine(const QString &line)
                             : fields[0] == "UNREACH" ? Unreachable : Closed;
             m_ports.insert(address, state);
             if (QTreeWidgetItem *row = m_rows.value(address)) setRowSsh(row, state);
+        } else if (fields[0] == "WEB") {
+            m_web.insert(address);
+            setRowBmc(address);
         } else if (fields[0] == "DONE") {
             m_progress->setValue(++m_done);
         }
@@ -705,6 +828,31 @@ void HostScanTab::setRowSsh(QTreeWidgetItem *row, PortState state)
     row->setData(SshColumn, Qt::UserRole, state == Open);
 }
 
+// The Name and BMC columns, as far as the scan has got for this host
+void HostScanTab::setRowBmc(quint32 address)
+{
+    QTreeWidgetItem *row = rowFor(address);
+    QSignalBlocker blocker(m_results);
+    row->setText(NameColumn, m_names.value(address));
+    QString bmc, tip;
+    QColor color("#888888");
+    if (m_redfish.contains(address)) {
+        bmc = "✔ " + m_redfish.value(address);
+        color = QColor("#008000");
+        tip = "Answers Redfish at https://" + formatIPv4(address) + "/redfish/v1/, so it is a BMC "
+              "(or another managed device)";
+    } else if (m_web.contains(address)) {
+        bmc = m_noCurl ? QStringLiteral("Web (443)") : QStringLiteral("Web only (443)");
+        tip = m_noCurl ? QStringLiteral("Port 443 is open. The scanning host has no curl, so Redfish "
+                                        "was not checked; it may still be a BMC.")
+                       : QStringLiteral("Port 443 is open, but it didn't answer Redfish, so it is "
+                                        "probably not a BMC");
+    }
+    row->setText(BmcColumn, bmc);
+    row->setToolTip(BmcColumn, tip);
+    row->setForeground(BmcColumn, color);
+}
+
 void HostScanTab::showStatus(const QString &text, bool isError)
 {
     m_statusLabel->setText(text);
@@ -777,6 +925,14 @@ void HostScanTab::finishScan(const QString &error)
     if (refused) summary += QString(", refused on %1").arg(refused);
     if (timedOut) summary += QString(", timed out on %1").arg(timedOut);
     summary += ".";
+    if (m_findBmcs) {
+        int web = 0;
+        for (quint32 address : m_web) if (!m_redfish.contains(address)) ++web;
+        summary += QString(" BMCs (Redfish): %1").arg(m_redfish.size());
+        if (web) summary += QString(", other web servers on 443: %1").arg(web);
+        summary += ".";
+        if (m_noCurl) summary += " The scanning host has no curl, so Redfish was not checked.";
+    }
     if (m_stopRequested) summary = "Stopped. " + summary;
     if (m_noPortCheck) summary += " The scanning host has neither bash with timeout nor nc, so the port was not checked.";
     if (m_noPing) summary += " The scanning host has no ping command.";
@@ -796,7 +952,9 @@ void HostScanTab::setScanning(bool scanning)
     m_portCombo->setEnabled(!scanning);
     m_timeoutSpin->setEnabled(!scanning);
     m_scanFromCombo->setEnabled(!scanning);
+    m_bmcCheck->setEnabled(!scanning);
     updateImportButton();
+    updateForwardButton();
 }
 
 void HostScanTab::updateImportButton()
@@ -843,4 +1001,222 @@ void HostScanTab::importChecked()
     if (skipped) message += QString(" Skipped %1 already saved.").arg(skipped);
     showStatus(message);
     updateImportButton();
+}
+
+void HostScanTab::updateForwardButton()
+{
+    const SSHConnection *via = scannedThrough();
+    // From this computer the hosts are reachable directly: no tunnels needed
+    m_forwardButton->setVisible(m_findBmcs && !m_scanFromKey.isEmpty());
+    m_forwardButton->setEnabled(!m_scanning && via && !m_web.isEmpty());
+    if (via) {
+        m_forwardButton->setToolTip(QString("Add the BMCs found to the tunnels of %1, to open their "
+                                            "web pages from this PC").arg(via->name));
+    } else if (!m_scanFromKey.isEmpty()) {
+        m_forwardButton->setToolTip("The connection this scan ran through is no longer saved");
+    }
+}
+
+QList<int> HostScanTab::pickLocalPorts(int count, int first, const QSet<int> &taken,
+                                       bool (*canBind)(int port))
+{
+    QList<int> ports;
+    for (int port = qMax(first, 1024); port <= 65535 && ports.size() < count; ++port) {
+        if (taken.contains(port) || (canBind && !canBind(port))) continue;
+        ports << port;
+    }
+    return ports;
+}
+
+// Turns the BMCs found through a head node into port forwards on that head
+// node's connection: one local port per BMC, or one SOCKS proxy for them all
+void HostScanTab::forwardBmcs()
+{
+    const SSHConnection *viaPtr = scannedThrough();
+    if (!viaPtr || m_web.isEmpty()) return;
+    const SSHConnection via = *viaPtr;
+
+    // What the connection forwards already, and which local ports any saved tunnel uses
+    QHash<quint32, int> forwarded;  // BMC address -> local port
+    const SSHTunnel *socks = nullptr;
+    for (const SSHTunnel &t : via.tunnels) {
+        quint32 address = 0;
+        if (t.type == SSHTunnel::Local && t.targetPort == 443 && parseIPv4(t.targetHost.trimmed(), &address)) {
+            forwarded.insert(address, t.listenPort);
+        } else if (t.type == SSHTunnel::Dynamic && !socks) {
+            socks = &t;
+        }
+    }
+    QSet<int> taken;
+    for (const SSHConnection &conn : m_connections) {
+        for (const SSHTunnel &t : conn.tunnels) {
+            if (t.listensLocally()) taken.insert(t.listenPort);
+        }
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QString("Forward BMCs through %1").arg(via.name));
+    dialog.resize(640, 460);
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    QLabel *intro = new QLabel(QString(
+        "These hosts answered on port 443 when scanned from <b>%1</b> (%2). Adding them to its "
+        "tunnels lets this PC open their web pages through it. Tunnels start with each SSH tab "
+        "of %1.").arg(via.name.toHtmlEscaped(), via.host.toHtmlEscaped()), &dialog);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    QTreeWidget *list = new QTreeWidget(&dialog);
+    list->setHeaderLabels(QStringList() << "IP address" << "Name" << "BMC");
+    list->setRootIsDecorated(false);
+    list->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    list->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    QList<quint32> addresses = m_web.values();
+    std::sort(addresses.begin(), addresses.end());
+    for (quint32 address : addresses) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(list);
+        item->setText(0, formatIPv4(address));
+        item->setData(0, Qt::UserRole, address);
+        item->setText(1, m_names.value(address));
+        bool isBmc = m_redfish.contains(address);
+        item->setText(2, isBmc ? m_redfish.value(address) : QStringLiteral("Web only, not Redfish"));
+        if (forwarded.contains(address)) {
+            item->setText(2, QString("Forwarded already, on localhost:%1").arg(forwarded.value(address)));
+            item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
+            item->setCheckState(0, Qt::Unchecked);
+        } else {
+            item->setCheckState(0, isBmc || m_noCurl ? Qt::Checked : Qt::Unchecked);
+        }
+    }
+    layout->addWidget(list, 1);
+
+    QRadioButton *perBmc = new QRadioButton("A local port for each checked BMC, from port", &dialog);
+    QSpinBox *firstPort = new QSpinBox(&dialog);
+    firstPort->setRange(1024, 65535);
+    firstPort->setValue(18443);
+    QHBoxLayout *perBmcRow = new QHBoxLayout();
+    perBmcRow->addWidget(perBmc);
+    perBmcRow->addWidget(firstPort);
+    perBmcRow->addStretch();
+    layout->addLayout(perBmcRow);
+    QLabel *perBmcNote = new QLabel("Each opens from the 🔀 tunnels button of the SSH tab, "
+                                    "e.g. https://localhost:18443.", &dialog);
+    perBmcNote->setStyleSheet("QLabel { color: #666; margin-left: 22px; }");
+    layout->addWidget(perBmcNote);
+
+    QRadioButton *useSocks = new QRadioButton(&dialog);
+    QSpinBox *socksPort = new QSpinBox(&dialog);
+    socksPort->setRange(1024, 65535);
+    QList<int> freeSocks = pickLocalPorts(1, 1080, taken, canBindLocally);
+    socksPort->setValue(freeSocks.isEmpty() ? 1080 : freeSocks.first());
+    if (socks) {
+        useSocks->setText(QString("Its SOCKS proxy on port %1, for all of them").arg(socks->listenPort));
+        socksPort->hide();
+    } else {
+        useSocks->setText("One SOCKS proxy for all of them, on port");
+    }
+    QHBoxLayout *socksRow = new QHBoxLayout();
+    socksRow->addWidget(useSocks);
+    socksRow->addWidget(socksPort);
+    socksRow->addStretch();
+    QPushButton *copyButton = new QPushButton("📋 Copy BMC addresses", &dialog);
+    copyButton->setToolTip("Copies https://<IP>/ of each checked or already forwarded BMC, "
+                           "to open through the proxy");
+    socksRow->addWidget(copyButton);
+    layout->addLayout(socksRow);
+    QLabel *socksNote = new QLabel("Simplest for a whole rack: one port. Set a browser's SOCKS5 proxy "
+                                   "to it once, then open each BMC by its own IP.", &dialog);
+    socksNote->setWordWrap(true);
+    socksNote->setStyleSheet("QLabel { color: #666; margin-left: 22px; }");
+    layout->addWidget(socksNote);
+
+    QButtonGroup *mode = new QButtonGroup(&dialog);
+    mode->addButton(perBmc);
+    mode->addButton(useSocks);
+    (socks ? useSocks : perBmc)->setChecked(true);
+
+    QCheckBox *connectNow = new QCheckBox(QString("Open an SSH tab to %1 now, to start them").arg(via.name), &dialog);
+    connectNow->setChecked(true);
+    layout->addWidget(connectNow);
+
+    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QPushButton *okButton = buttons->button(QDialogButtonBox::Ok);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    auto checkedAddresses = [list]() {
+        QList<quint32> result;
+        for (int i = 0; i < list->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *item = list->topLevelItem(i);
+            if (item->checkState(0) == Qt::Checked) result << item->data(0, Qt::UserRole).toUInt();
+        }
+        return result;
+    };
+    // The BMCs to open through the proxy: the checked ones and those already forwarded
+    auto copyableAddresses = [list]() {
+        QList<quint32> result;
+        for (int i = 0; i < list->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *item = list->topLevelItem(i);
+            if (item->checkState(0) == Qt::Checked || !(item->flags() & Qt::ItemIsEnabled)) {
+                result << item->data(0, Qt::UserRole).toUInt();
+            }
+        }
+        return result;
+    };
+    auto update = [=]() {
+        int checked = checkedAddresses().size();
+        firstPort->setEnabled(perBmc->isChecked());
+        // Picking the SOCKS proxy the connection already has adds nothing to start
+        connectNow->setVisible(perBmc->isChecked() || !socks);
+        socksPort->setEnabled(useSocks->isChecked());
+        copyButton->setEnabled(!copyableAddresses().isEmpty());
+        if (perBmc->isChecked()) {
+            okButton->setText(checked == 1 ? QString("Add 1 Tunnel") : QString("Add %1 Tunnels").arg(checked));
+            okButton->setEnabled(checked > 0);
+        } else {
+            okButton->setText(socks ? QString("OK") : QString("Add SOCKS Proxy"));
+            okButton->setEnabled(true);
+        }
+    };
+    connect(list, &QTreeWidget::itemChanged, &dialog, update);
+    connect(perBmc, &QRadioButton::toggled, &dialog, update);
+    connect(copyButton, &QPushButton::clicked, &dialog, [copyableAddresses]() {
+        QStringList urls;
+        for (quint32 address : copyableAddresses()) urls << "https://" + formatIPv4(address) + "/";
+        QApplication::clipboard()->setText(urls.join('\n'));
+    });
+    update();
+
+    if (InWindowDialog::exec(&dialog) != QDialog::Accepted) return;
+
+    QList<SSHTunnel> added;
+    if (perBmc->isChecked()) {
+        QList<quint32> chosen = checkedAddresses();
+        QList<int> ports = pickLocalPorts(chosen.size(), firstPort->value(), taken, canBindLocally);
+        for (int i = 0; i < chosen.size() && i < ports.size(); ++i) {
+            SSHTunnel t;
+            t.type = SSHTunnel::Local;
+            t.listenPort = ports[i];
+            t.targetHost = formatIPv4(chosen[i]);
+            t.targetPort = 443;
+            t.name = m_names.value(chosen[i]);
+            if (t.name.isEmpty()) t.name = "BMC " + t.targetHost;
+            added << t;
+        }
+        showStatus(QString("Added %1 BMC tunnel(s) to %2, on local ports %3%4.")
+                       .arg(added.size()).arg(via.name)
+                       .arg(added.isEmpty() ? 0 : added.first().listenPort)
+                       .arg(added.size() > 1 ? QString("-%1").arg(added.last().listenPort) : QString()));
+    } else if (!socks) {
+        SSHTunnel t;
+        t.type = SSHTunnel::Dynamic;
+        t.listenPort = socksPort->value();
+        t.targetHost.clear();
+        t.targetPort = 0;
+        t.name = "BMCs";
+        added << t;
+        showStatus(QString("Added a SOCKS proxy on port %1 to %2. Set a browser's SOCKS5 proxy to "
+                           "localhost:%1 to open the BMCs by IP.").arg(t.listenPort).arg(via.name));
+    }
+    emit addTunnels(via, added, !connectNow->isHidden() && connectNow->isChecked());
 }
