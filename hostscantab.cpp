@@ -275,31 +275,79 @@ void HostScanTab::onScanFromChanged()
     if (!m_rangeEdited) setDefaultRange();
 }
 
-// Suggests the /24 around the scanning host
+// Suggests the subnet around the scanning host
 void HostScanTab::setDefaultRange()
 {
-    quint32 base = 0;
+    quint32 address = 0;
+    int prefixLength = 24;
     const SSHConnection *via = scanFromConnection();
     if (via) {
-        if (!parseIPv4(via->host.trimmed(), &base)) return;  // A host name: leave it to the user
+        // The remote host's netmask isn't known here, so assume a /24
+        if (!parseIPv4(via->host.trimmed(), &address)) return;  // A host name: leave it to the user
     } else {
-        for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-            if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack)) {
-                continue;
-            }
-            for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    base = entry.ip().toIPv4Address();
-                    break;
-                }
-            }
-            if (base) break;
-        }
-        if (!base) return;
+        QNetworkAddressEntry entry;
+        if (!localScanAddress(&entry)) return;
+        address = entry.ip().toIPv4Address();
+        prefixLength = entry.prefixLength();
     }
-    base &= 0xFFFFFF00u;
-    m_startEdit->setText(formatIPv4(base | 1));
-    m_endEdit->setText(formatIPv4(base | 254));
+    // Use the real subnet when it is scannable; otherwise fall back to the /24
+    // around the address (point-to-point links, or subnets too big to scan)
+    if (prefixLength < 1 || prefixLength > 30 || (quint64(1) << (32 - prefixLength)) > kMaxAddresses) {
+        prefixLength = 24;
+    }
+    const quint32 mask = 0xFFFFFFFFu << (32 - prefixLength);
+    const quint32 network = address & mask;
+    const quint32 broadcast = network | ~mask;
+    m_startEdit->setText(formatIPv4(network + 1));
+    m_endEdit->setText(formatIPv4(broadcast - 1));
+}
+
+// Picks the IPv4 address of the network this computer is really on: an
+// interface that is up with a link, not a container/VM bridge or VPN, with
+// wired Ethernet preferred over Wi-Fi
+bool HostScanTab::localScanAddress(QNetworkAddressEntry *result)
+{
+    static const QStringList virtualPrefixes = {
+        "docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "lxcbr", "lxdbr", "cni",
+        "flannel", "cali", "podman", "tun", "tap", "wg", "tailscale", "zt", "utun",
+        "vethernet", "virtualbox", "vmware", "hyper-v"};
+    auto isVirtual = [](const QNetworkInterface &iface) {
+        if (iface.type() == QNetworkInterface::Virtual) return true;
+        const QString names[] = {iface.name().toLower(), iface.humanReadableName().toLower()};
+        for (const QString &name : names) {
+            for (const QString &prefix : virtualPrefixes) {
+                if (name.startsWith(prefix)) return true;
+            }
+        }
+        return false;
+    };
+
+    int bestScore = -1;
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
+        const auto flags = iface.flags();
+        if (!(flags & QNetworkInterface::IsUp) || (flags & QNetworkInterface::IsLoopBack)) continue;
+
+        int score;
+        if (!(flags & QNetworkInterface::IsRunning)) {
+            score = 0;  // Up but no link (e.g. docker0 with no containers): last resort
+        } else if (isVirtual(iface) || (flags & QNetworkInterface::IsPointToPoint)) {
+            score = 1;
+        } else if (iface.type() == QNetworkInterface::Wifi) {
+            score = 2;
+        } else {
+            score = 3;  // Wired Ethernet, or a type Qt can't tell
+        }
+        if (score <= bestScore) continue;
+
+        for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
+            if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
+            if ((entry.ip().toIPv4Address() >> 16) == 0xA9FE) continue;  // 169.254 link-local
+            *result = entry;
+            bestScore = score;
+            break;
+        }
+    }
+    return bestScore >= 0;
 }
 
 bool HostScanTab::parseIPv4(const QString &text, quint32 *address)

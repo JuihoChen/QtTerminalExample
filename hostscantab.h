@@ -15,6 +15,7 @@ class QBoxLayout;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QNetworkAddressEntry;
 class QProcess;
 class QProgressBar;
 class QPushButton;
@@ -71,6 +72,7 @@ private slots:
 
 private:
     void setDefaultRange();
+    static bool localScanAddress(QNetworkAddressEntry *result);
     void handleOutput(const QByteArray &data);
     void handleLine(const QString &line);
     // What the port check found for one host
