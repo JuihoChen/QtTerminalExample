@@ -122,13 +122,15 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
             menu.addAction("📤 Upload File to Server...", [this, connection]() {
                 uploadFileToSSH(connection);
             });
-            
-            menu.addAction("📂 File Browser...", [this, tabIndex]() {
-                tabWidget->setCurrentIndex(tabIndex);
-                showFileBrowser();
-            });
         }
     }
+    
+    // Every terminal tab has one: SSH tabs browse the server, local tabs the
+    // local folder only
+    menu.addAction("📂 File Browser...", [this, tabIndex]() {
+        tabWidget->setCurrentIndex(tabIndex);
+        showFileBrowser();
+    });
     
     menu.addSeparator();
     menu.addAction("🎨 Change Color Scheme", this, &TerminalWindow::changeColorScheme);
