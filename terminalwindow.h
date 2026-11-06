@@ -72,6 +72,7 @@ private slots:
     void addConnectionToFolder(const QString &folderName);
     void editConnection(QTreeWidgetItem *item);
     void deleteConnection(QTreeWidgetItem *item);
+    void editTunnels(QTreeWidgetItem *item);
     // Scan dialog: scan from a saved connection (index) or this computer (-1)
     void scanForHosts(int fromConnection = -1, const QString &folder = QString());
 
@@ -109,6 +110,14 @@ private:
     QTermWidget* createSSHTerminal(const SSHConnection &connection);
     void returnToLocalShell(QTermWidget *terminal);
     void checkHandTypedSSH(QTermWidget *terminal);
+
+    // SSH port forwarding (terminalwindow_tunnels.cpp)
+    QList<SSHTunnel> startableTunnels(const SSHConnection &connection, QStringList *skipped);
+    QList<SSHTunnel> activeTunnels(QTermWidget *terminal) const;
+    void setupTunnelsButton();
+    void updateTunnelsButton();
+    void addTunnelActions(QMenu *menu, QTermWidget *terminal);
+    QToolButton *tunnelsButton = nullptr;  // Status bar: the current SSH tab's tunnels
 
     // Connection management methods
     void loadConnections();

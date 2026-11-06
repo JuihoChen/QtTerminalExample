@@ -78,6 +78,34 @@ private slots:
         QVERIFY2(cmd.endsWith("bob@10.0.0.5 'ls -la /tmp'"), qPrintable(cmd));
     }
 
+    void tunnelOptions()
+    {
+        SSHConnection c("BCM", "10.254.192.18", "root");
+        SSHTunnel bmc;
+        bmc.listenPort = 8443; bmc.targetHost = "10.254.196.33"; bmc.targetPort = 443;
+        SSHTunnel socks;
+        socks.type = SSHTunnel::Dynamic; socks.listenPort = 1080;
+        SSHTunnel back;
+        back.type = SSHTunnel::Remote; back.listenPort = 18000; back.targetPort = 8000;
+        SSHTunnel off = bmc;
+        off.listenPort = 9443; off.enabled = false;
+        SSHTunnel v6 = bmc;
+        v6.listenPort = 9444; v6.targetHost = "fe80::1";
+        SSHTunnel bad = bmc;
+        bad.listenPort = 9445; bad.targetHost = "x;rm -rf /";
+
+        QString cmd = CommandSafetyHelper::buildSafeSSHCommand(c, QString(),
+            {bmc, socks, back, off, v6, bad});
+        QVERIFY2(cmd.contains("-o ExitOnForwardFailure=no -L 8443:10.254.196.33:443 -D 1080 "
+                              "-R 18000:localhost:8000 -L '9444:[fe80::1]:443' root@"), qPrintable(cmd));
+        QVERIFY2(!cmd.contains("9443"), qPrintable(cmd));   // switched off
+        QVERIFY2(!cmd.contains("rm -rf"), qPrintable(cmd)); // invalid host left out
+        QVERIFY(!bad.problem().isEmpty());
+
+        // No tunnels: the command is unchanged
+        QVERIFY(!CommandSafetyHelper::buildSafeSSHCommand(c).contains("Forward"));
+    }
+
     // The password goes through the environment, never the command line
     void passwordStaysOffCommandLine()
     {

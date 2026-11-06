@@ -28,6 +28,7 @@ add_executable(QtTerminalExample
     terminalwindow_appearance.cpp
     terminalwindow_connections.cpp
     terminalwindow_ssh.cpp
+    terminalwindow_tunnels.cpp
     terminalwindow_filetransfer.cpp
     terminalwindow_filebrowser.cpp
     terminalwindow_menus.cpp
@@ -35,6 +36,7 @@ add_executable(QtTerminalExample
     remotefilemodel.cpp
     filebrowserpane.cpp
     connectiondialog.cpp
+    tunnelsdialog.cpp
     hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp

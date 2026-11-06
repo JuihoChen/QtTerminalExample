@@ -298,6 +298,7 @@ void ConnectionDialog::populateFields(const SSHConnection &connection)
     useKeyAuthCheck->setChecked(connection.useKeyAuth);
     identityFileEdit->setText(connection.identityFile);
     useAgentCheck->setChecked(connection.useAgent);
+    keptTunnels = connection.tunnels;
     
     // Set folder, add it if it doesn't exist
     if (folderCombo->findText(connection.folder) == -1 && !connection.folder.isEmpty()) {
@@ -318,6 +319,7 @@ SSHConnection ConnectionDialog::getConnection() const
     conn.useKeyAuth = useKeyAuthCheck->isChecked();
     conn.identityFile = identityFileEdit->text().trimmed();
     conn.useAgent = useAgentCheck->isChecked();
+    conn.tunnels = keptTunnels;
     return conn;
 }
 

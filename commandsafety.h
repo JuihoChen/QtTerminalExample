@@ -123,12 +123,27 @@ public:
         return cmd;
     }
 
+    // -L/-R/-D options for the given port forwards (only the terminal tab's
+    // ssh gets these; scp, the file browser and scans never open tunnels).
+    // A forward that can't be set up is reported by ssh as a warning and the
+    // session goes on without it, rather than the whole login failing.
+    static QString buildTunnelOptions(const QList<SSHTunnel> &tunnels) {
+        QString opts;
+        for (const SSHTunnel &tunnel : tunnels) {
+            if (!tunnel.enabled || !tunnel.problem().isEmpty()) continue;
+            opts += QString("%1 %2 ").arg(tunnel.flag(), escapeShellArgument(tunnel.spec()));
+        }
+        if (!opts.isEmpty()) opts = "-o ExitOnForwardFailure=no " + opts;
+        return opts;
+    }
+
     // Build safe SSH command
     static QString buildSafeSSHCommand(const SSHConnection &connection, 
-                                      const QString &remoteCommand = QString()) {
+                                      const QString &remoteCommand = QString(),
+                                      const QList<SSHTunnel> &tunnels = QList<SSHTunnel>()) {
         QString cmd = buildPasswordPrefix(connection);
         
-        cmd += "ssh " + buildCommonOptions(connection);
+        cmd += "ssh " + buildCommonOptions(connection) + buildTunnelOptions(tunnels);
         
         if (connection.port != 22) {
             cmd += QString("-p %1 ").arg(connection.port);
