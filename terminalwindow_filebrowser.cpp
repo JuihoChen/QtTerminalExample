@@ -19,6 +19,21 @@ void TerminalWindow::setupFileBrowserDock()
     fileBrowserDock->setObjectName("FileBrowserDock");
     fileBrowserDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea |
                                      Qt::BottomDockWidgetArea);
+    // Qt's own float and close buttons are tiny, so give them bundled icons
+    // drawn larger, a bigger click area and a light highlight under the mouse
+    fileBrowserDock->setStyleSheet(
+        "QDockWidget { titlebar-close-icon: url(:/icons/dock-close.png);"
+        "  titlebar-normal-icon: url(:/icons/dock-float.png); }"
+        "QDockWidget::close-button, QDockWidget::float-button {"
+        "  subcontrol-origin: padding; subcontrol-position: right center;"
+        "  min-width: 20px; min-height: 20px; icon-size: 20px;"
+        "  border: 1px solid transparent; border-radius: 4px; }"
+        "QDockWidget::close-button { right: 3px; }"
+        "QDockWidget::float-button { right: 29px; }"
+        "QDockWidget::close-button:hover, QDockWidget::float-button:hover {"
+        "  background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.18); }"
+        "QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {"
+        "  background: rgba(0, 0, 0, 0.16); }");
 
     fileBrowserStack = new QStackedWidget(fileBrowserDock);
     // Tabs without a server still get the local folder, under a note
