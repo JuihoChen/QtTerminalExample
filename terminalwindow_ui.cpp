@@ -256,6 +256,15 @@ void TerminalWindow::setupMenus()
     aboutAction->setStatusTip("Show application information");
     connect(aboutAction, &QAction::triggered, this, &TerminalWindow::showAbout);
     helpMenu->addAction(aboutAction);
+
+    // One-click Find on the right end of the menu bar
+    QToolButton *findButton = new QToolButton(menuBar);
+    findButton->setText("🔍 Find");
+    findButton->setToolTip("Find in terminal (Ctrl+Shift+F)");
+    findButton->setAutoRaise(true);
+    findButton->setFocusPolicy(Qt::NoFocus);
+    connect(findButton, &QToolButton::clicked, this, &TerminalWindow::findInTerminal);
+    menuBar->setCornerWidget(findButton, Qt::TopRightCorner);
 }
 
 void TerminalWindow::setupConnectionTree()
