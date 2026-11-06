@@ -123,7 +123,7 @@ ssh-add ~/.ssh/id_ed25519   # optional: load it into ssh-agent
 
 ## SSH Tunnels
 
-A connection can carry port forwards that start with its SSH tab. Open the connection with **Edit** and switch to the **🔀 Tunnels** tab:
+A connection can carry port forwards that start with its SSH tab. Right-click the connection and choose **🔀 Tunnels...** (it shows how many are on, such as **Tunnels (2)...**). Changes apply to SSH tabs opened afterwards:
 
 - **➕ Add Forward** adds a row. Pick the type, the listen port and the destination:
   - **Local (-L)** opens a port on this PC that leads to *destination host:port as seen from the server*. The destination can be the server itself (`localhost`) or any host it can reach, such as a BMC on the management network: listen `8443`, destination `10.254.0.5` port `443`, then open https://localhost:8443.
@@ -144,7 +144,7 @@ Tunnels close when the SSH session in the tab ends. They are saved in `connectio
 
 ## File Browser
 
-The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at. Open it with **View → File Browser** (`Ctrl+Shift+B`) or right-click an SSH tab → **📂 File Browser...**. It docks on the right of the terminal; drag its title bar to move it to the left or bottom, or float it.
+The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at. Open it with **View → File Browser** (`Ctrl+Shift+B`) or right-click a terminal tab → **📂 File Browser...** (on a local tab it shows just the local folder). It docks on the right of the terminal; drag its title bar to move it to the left or bottom, or float it.
 
 - **Remote folder (top)** - The server's files with size, modified time, permissions and owner. Double-click a folder (or press `Enter`) to open it, `Backspace` or the ↑ button to go up, or type a path and press `Enter`. Click a column to sort; folders stay on top.
 - **Local folder (middle)** - Where downloads go. Drag files or folders from the remote list and drop them here, or onto a local subfolder. Double-click to move between local folders.
@@ -156,7 +156,7 @@ The file browser is a WinSCP-style SFTP panel for the SSH tab you're looking at.
 - **Right-click** a remote file or folder for **Download to <local folder>**, **Download To...** (pick another folder), **Edit** and **Copy Path**. Double-clicking a remote file also downloads it.
 - **Transfers (bottom)** - Each download (↓) and upload (↑) with its progress. Right-click to cancel one, or to copy the error of a failed one. Folders transfer with everything inside them. Items that can't be copied (unreadable files, pipes and other special files) are skipped and the rest still comes across; the row then says **N skipped** in amber, and hovering over it or double-clicking it lists each item and why. In a downloaded folder, symlinks are recreated as symlinks with the same target, like `cp -a`; in an uploaded folder, links to folders are skipped.
 
-Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused. Settings in `~/.ssh/config` (such as `Host` aliases, `User`, `Port` and `IdentityFile`) apply to the browser too.
+Each SSH tab gets its own browser, connected with the tab's saved login: SSH key file, ssh-agent and your default keys, then the password. It opens one connection for browsing and one for transfers, so you can keep browsing while a big file moves. These are separate logins, so they show up in `w` on the server next to the terminal's. Closing the panel logs them out (a transfer still running finishes first), and reopening it logs back in to the folder you were in; the local folder, transfer list and files open for editing are kept. Saving a file you're editing while the panel is closed logs in just long enough to upload it. Transfers are written as `name.part` and renamed when complete, so an interrupted one never leaves a cut-off file under the real name. A file replaced on the server keeps its permissions (and its owner, when logged in as root); a symlink stays a symlink, and a writable file in a folder you can't write to (say, in `/etc`) is written in place. A new server's host key is saved to `~/.ssh/known_hosts`, the same as `ssh -o StrictHostKeyChecking=accept-new`; a changed key is refused. Settings in `~/.ssh/config` (such as `Host` aliases, `User`, `Port` and `IdentityFile`) apply to the browser too.
 
 On a local tab (or an SSH tab after `exit`) the browser keeps the local folder list, with a note in place of the remote list, so you can still look through and edit local files. If you then type `ssh` in any tab yourself, the browser follows when the user, host and port match a saved connection (the one the tab came from first): the tab becomes that connection's SSH tab once the login finishes. A host that isn't saved has no login for the browser to use, so the panel says so instead; save it as a connection to browse it. A `Host` alias from `~/.ssh/config` only matches a connection saved with the same alias as its host.
 
@@ -168,7 +168,7 @@ The file browser uses [libssh](https://www.libssh.org/) for SFTP.
 
 Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but for SSH only. Open it with **Connections → Scan for SSH Hosts...**, right-click a folder → **Scan for SSH Hosts into <folder>...**, or right-click a connection → **Scan for SSH Hosts from Here...**. It opens as a **🔍 SSH Scan** tab beside the terminal tabs, so the results stay put while you work in a terminal, and a scan keeps running when you switch tabs. Close the tab to stop a scan.
 
-- **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). It starts out as the /24 around the scanning host.
+- **IP range** - Start and end IPv4 address, up to 4096 addresses (a /20). Scanning from this computer, it starts out as the subnet of your real network connection: wired Ethernet is preferred over Wi-Fi, and adapters with no link, VPNs and container/VM bridges (such as `docker0`) are skipped. The subnet's real size is used (a /23 gives x.x.192.1 to x.x.193.254), and anything bigger than a /20 falls back to the /24 around your address. Scanning through a saved connection, it is the /24 around that host. As you type the start address, the end follows it: after the first three numbers it becomes `.254` of the same /24. Type your own end address to stop that, or clear the end box to make it follow again.
 - **SSH port and timeout** - The port to check (22 unless set) and how long to wait for each host.
 - **Scan from** - **This computer**, or **Through** a saved connection: the scan then runs on that server (a head node or jump box) and finds the hosts only it can reach. It uses only standard Linux tools there: `ping`, a TCP check of the port (bash's `/dev/tcp` with `timeout`, or `nc`), and the ARP table in `/proc/net/arp`. Nothing is installed.
 - **Results** - One row per host that answered a ping, has the port open, or is in the ARP table, with its **IP address**, **MAC address** and **SSH open**. MAC addresses come from the scanning host's ARP table, so they show only for hosts on its own subnet (and for the scanning host itself). Hosts with the port open start checked; hosts that already have a connection are marked **(saved)**. When the port isn't open, the SSH column says why: **No (refused)** means the host answered but nothing listens on the port, **No (timed out)** means no answer within the timeout (often a firewall dropping it; try a longer timeout), and **No (unreachable)** means the network reported the host unreachable. Hover over the value for the same explanation.
@@ -225,6 +225,17 @@ make -j$(nproc)
 ```
 
 The build must happen in a separate `build` folder; the bundled qtermwidget refuses in-source builds. The build also copies the terminal color schemes into `build/color-schemes/`, next to the program, so you don't need to run `make install`.
+
+### Run Tests
+
+The build also makes a small Qt Test suite. From the `build` folder:
+```bash
+ctest --output-on-failure
+```
+
+It checks the shell command building and quoting, connection validation, loading `connections.json` (including files from older versions), the host scan's IP address helpers and script (it scans `127.0.0.1` on a port the test opens), the file browser's path and permission helpers, and the port field. A smoke test also starts the app on Qt's offscreen platform with an empty config folder. None of it needs an SSH server or a display. Pass `-DBUILD_TESTS=OFF` to `cmake` to skip building the tests.
+
+GitHub Actions builds the app and runs these tests on Ubuntu 24.04 after every push and pull request (`.github/workflows/build.yml`).
 
 ### Run Application
 From the `build` folder:
@@ -291,6 +302,7 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 - **Interrupt** - `Ctrl+Z` sends the interrupt signal (what `Ctrl+C` does in other terminals), because `Ctrl+C` copies. Suspending a program with `Ctrl+Z` isn't available
 - **Paste** - `Ctrl+V` in terminal or right-click → Paste
 - **Select All** - `Ctrl+A` or right-click → Select All (so `Ctrl+A` doesn't move to the start of the line)
+- **Find** - `Ctrl+Shift+F`, the 🔍 Find button at the right end of the menu bar, Edit → Find... or right-click → Find... opens a find bar under the terminal. It searches the screen and the scrollback, newest output first: `Enter` goes up to older matches and `Shift+Enter` comes back down. **Aa** matches case and **.\*** treats the text as a regular expression. `Esc` closes the bar and returns to the terminal. On tabs without a terminal, such as SSH Scan, the Find button is greyed out
 - **Clear Terminal** - Right-click → Clear wipes the screen and the scrollback; `Ctrl+L` asks the shell to clear the screen and keeps the scrollback
 
 ### Font and Display
@@ -311,7 +323,7 @@ sudo cp ~/.local/share/applications/qt-terminal.desktop /usr/share/applications/
 - **Folder Kept** - New Connection starts in the folder selected in the tree, and Edit Connection keeps the connection's current folder
 
 ### File Transfer Operations
-- **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click SSH tab → "📂 File Browser..." (see [File Browser](#file-browser))
+- **Browse, Download, Upload and Edit** - `Ctrl+Shift+B`, or right-click a terminal tab → "📂 File Browser..." (see [File Browser](#file-browser))
 - **Upload File** - Right-click SSH tab → "📤 Upload File to Server"
 
 ### Interface Management
@@ -384,6 +396,8 @@ All SSH connections use optimized settings:
 | Select All | `Ctrl+A` | In Terminal |
 | Interrupt (like `Ctrl+C` elsewhere) | `Ctrl+Z` | In Terminal |
 | Clear screen (shell) | `Ctrl+L` | In Terminal |
+| Find in terminal | `Ctrl+Shift+F` | Global |
+| Older / newer match | `Enter` / `Shift+Enter` | Find bar |
 | **View Controls** |  |  |
 | Zoom In | `Ctrl++` | Global |
 | Zoom Out | `Ctrl+-` | Global |
@@ -515,7 +529,17 @@ QtTerminalExample/
 
 ## Version History
 
-### v0.8 (Current)
+### v0.9 (Current)
+- ✅ **Find in Terminal** - A find bar with match case and regex, opened from `Ctrl+Shift+F` or the 🔍 Find button in the menu bar (greyed out on tabs without a terminal)
+- ✅ **New Tab Button** - A browser-style "+" after the last tab
+- ✅ **Port Picker** - Port fields are editable lists of common ports
+- ✅ **Scan Range** - The default range comes from your real network (wired before Wi-Fi, skipping docker, VPNs and unplugged adapters) at its real subnet size, and the end address follows the start as you type
+- ✅ **File Browser** - Logs out when the panel closes and back in when it opens, survives a dropped idle connection, shows file type icons, and opens from the right-click menu of local tabs too
+- ✅ **Tabs Close on Exit** - A tab closes when its shell exits, even after a failed SSH login
+- ✅ **WSL** - Dialogs and message boxes open inside the main window, the app icon shows in the Start menu and taskbar, and the desktop shortcut has no penguin badge
+- ✅ **Refresh on F5** - Connections → Refresh is `F5` only, so `Ctrl+R` reaches the shell
+
+### v0.8
 - ✅ **About Dialog** - Shows the git commit and build time of the running build (refreshed on every `make`), the Qt version, key shortcuts and the GitHub link
 - ✅ **App Icon** - A bundled terminal-with-globe icon for the window, taskbar and desktop launcher, so it no longer depends on emoji fonts
 - ✅ **Hidden Files** - The file browser shows dot files, with `Ctrl+Alt+H` to hide them

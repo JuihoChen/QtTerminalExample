@@ -2,6 +2,7 @@
 #ifndef SSHCONNECTION_H
 #define SSHCONNECTION_H
 
+#include <QJsonObject>
 #include <QString>
 #include <QMetaType>
 #include "sshtunnel.h"
@@ -40,6 +41,38 @@ struct SSHConnection {
                identityFile == other.identityFile &&
                useAgent == other.useAgent &&
                tunnels == other.tunnels;
+    }
+
+    // One entry of connections.json. Keys missing from files saved by older
+    // versions get the same defaults as a new connection.
+    QJsonObject toJson() const {
+        QJsonObject obj;
+        obj["name"] = name;
+        obj["host"] = host;
+        obj["username"] = username;
+        obj["password"] = password;
+        obj["port"] = port;
+        obj["folder"] = folder;
+        obj["useKeyAuth"] = useKeyAuth;
+        obj["identityFile"] = identityFile;
+        obj["useAgent"] = useAgent;
+        if (!tunnels.isEmpty()) obj["tunnels"] = SSHTunnel::listToJson(tunnels);
+        return obj;
+    }
+
+    static SSHConnection fromJson(const QJsonObject &obj) {
+        SSHConnection conn;
+        conn.name = obj["name"].toString();
+        conn.host = obj["host"].toString();
+        conn.username = obj["username"].toString();
+        conn.password = obj["password"].toString();
+        conn.port = obj["port"].toInt(22);
+        conn.folder = obj["folder"].toString();
+        conn.useKeyAuth = obj["useKeyAuth"].toBool(false);
+        conn.identityFile = obj["identityFile"].toString();
+        conn.useAgent = obj["useAgent"].toBool(true);
+        conn.tunnels = SSHTunnel::listFromJson(obj["tunnels"].toArray());
+        return conn;
     }
 };
 

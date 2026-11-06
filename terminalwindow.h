@@ -55,6 +55,9 @@ private slots:
     void showContextMenu(const QPoint &pos);
     void copyClipboard();
     void selectAllText();
+    void findInTerminal();
+    void toggleFindBar();
+    void updateFindButton();
     void onTabChanged(int index);
     void onTerminalFinished();
     void chooseStartFolder();
@@ -69,6 +72,7 @@ private slots:
     void addConnectionToFolder(const QString &folderName);
     void editConnection(QTreeWidgetItem *item);
     void deleteConnection(QTreeWidgetItem *item);
+    void editTunnels(QTreeWidgetItem *item);
     // Scan dialog: scan from a saved connection (index) or this computer (-1)
     void scanForHosts(int fromConnection = -1, const QString &folder = QString());
 
@@ -162,6 +166,7 @@ private:
     QLabel *configPasswordLabel;
     QLabel *configKeyLabel;
     QPushButton *quickConnectButton;
+    QToolButton *findButton = nullptr;  // menu bar Find toggle
     QPushButton *editConnectionButton;
     QPushButton *deleteConnectionButton;
 

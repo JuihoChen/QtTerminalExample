@@ -15,6 +15,7 @@ void TerminalWindow::showContextMenu(const QPoint &pos)
     menu.addAction("Paste", terminal, &QTermWidget::pasteClipboard);
     menu.addSeparator();
     menu.addAction("Select All", this, &TerminalWindow::selectAllText);
+    menu.addAction("Find...", this, &TerminalWindow::findInTerminal);
     menu.addSeparator();
     menu.addAction("Clear", terminal, &QTermWidget::clear);
     menu.addSeparator();
@@ -49,6 +50,14 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addSeparator();
             menu.addAction("✏️ Edit Connection", [this, item]() {
                 editConnection(item);
+            });
+            int tunnelCount = 0;
+            for (const SSHTunnel &t : qvariant_cast<SSHConnection>(connectionData).tunnels) {
+                if (t.enabled) ++tunnelCount;
+            }
+            menu.addAction(tunnelCount > 0 ? QString("🔀 Tunnels (%1)...").arg(tunnelCount)
+                                           : QString("🔀 Tunnels..."), [this, item]() {
+                editTunnels(item);
             });
             menu.addAction("🗑️ Delete Connection", [this, item]() {
                 deleteConnection(item);
@@ -121,11 +130,6 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
             menu.addAction("📤 Upload File to Server...", [this, connection]() {
                 uploadFileToSSH(connection);
             });
-            
-            menu.addAction("📂 File Browser...", [this, tabIndex]() {
-                tabWidget->setCurrentIndex(tabIndex);
-                showFileBrowser();
-            });
 
             if (!activeTunnels(terminal).isEmpty()) {
                 QMenu *tunnelsMenu = menu.addMenu("🔀 Tunnels");
@@ -133,6 +137,13 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
             }
         }
     }
+    
+    // Every terminal tab has one: SSH tabs browse the server, local tabs the
+    // local folder only
+    menu.addAction("📂 File Browser...", [this, tabIndex]() {
+        tabWidget->setCurrentIndex(tabIndex);
+        showFileBrowser();
+    });
     
     menu.addSeparator();
     menu.addAction("🎨 Change Color Scheme", this, &TerminalWindow::changeColorScheme);

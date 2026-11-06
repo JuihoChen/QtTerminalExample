@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(QtTerminalExample VERSION 0.8.0)
+project(QtTerminalExample VERSION 0.9.0)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the build type." FORCE)
@@ -36,6 +36,7 @@ add_executable(QtTerminalExample
     remotefilemodel.cpp
     filebrowserpane.cpp
     connectiondialog.cpp
+    tunnelsdialog.cpp
     hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp
@@ -136,6 +137,13 @@ add_custom_command(TARGET QtTerminalExample POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/icons/qtterminal-256.png"
         "$<TARGET_FILE_DIR:QtTerminalExample>/qtterminal.png"
 )
+
+# Unit tests and a startup smoke test: build, then run "ctest" in the build folder
+option(BUILD_TESTS "Build the unit tests" ON)
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Using QTermWidget library: ${QTERMWIDGET_LIBRARY}")

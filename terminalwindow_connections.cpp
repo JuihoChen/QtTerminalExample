@@ -87,19 +87,7 @@ void TerminalWindow::loadConnections()
     QJsonArray connectionsArray = root["connections"].toArray();
     
     for (const QJsonValue &value : connectionsArray) {
-        QJsonObject connObj = value.toObject();
-        SSHConnection conn;
-        conn.name = connObj["name"].toString();
-        conn.host = connObj["host"].toString();
-        conn.username = connObj["username"].toString();
-        conn.password = connObj["password"].toString(); // Load password field
-        conn.port = connObj["port"].toInt(22);
-        conn.folder = connObj["folder"].toString();
-        conn.useKeyAuth = connObj["useKeyAuth"].toBool(false);
-        conn.identityFile = connObj["identityFile"].toString();
-        conn.useAgent = connObj["useAgent"].toBool(true);
-        conn.tunnels = SSHTunnel::listFromJson(connObj["tunnels"].toArray());
-        connections.append(conn);
+        connections.append(SSHConnection::fromJson(value.toObject()));
     }
     
     qDebug() << "Loaded" << connections.size() << "connections";
@@ -164,18 +152,7 @@ void TerminalWindow::saveConnections()
     QJsonArray connectionsArray;
     
     for (const SSHConnection &conn : connections) {
-        QJsonObject connObj;
-        connObj["name"] = conn.name;
-        connObj["host"] = conn.host;
-        connObj["username"] = conn.username;
-        connObj["password"] = conn.password; // Save password field
-        connObj["port"] = conn.port;
-        connObj["folder"] = conn.folder;
-        connObj["useKeyAuth"] = conn.useKeyAuth;
-        connObj["identityFile"] = conn.identityFile;
-        connObj["useAgent"] = conn.useAgent;
-        if (!conn.tunnels.isEmpty()) connObj["tunnels"] = SSHTunnel::listToJson(conn.tunnels);
-        connectionsArray.append(connObj);
+        connectionsArray.append(conn.toJson());
     }
     
     root["connections"] = connectionsArray;

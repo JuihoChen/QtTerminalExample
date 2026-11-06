@@ -12,6 +12,95 @@
 #include <QFormLayout>
 #include <QSpacerItem>
 #include <QDockWidget>
+#include <QToolButton>
+#include <QEvent>
+#include <QTimer>
+
+namespace {
+
+// Keeps the browser-style "+" button sitting just after the last tab.
+// In document mode the tab bar spans the whole width, so the button is placed
+// from the last tab's rectangle. A blank corner widget reserves room at the
+// right end: when there are too many tabs to fit, the button parks there
+// instead of covering the tab scroll arrows.
+// Blank corner widget; QTabWidget sizes corners by their size hint
+class NewTabButtonRoom : public QWidget
+{
+public:
+    NewTabButtonRoom(int width, QWidget *parent) : QWidget(parent), roomWidth(width) {}
+    QSize sizeHint() const override { return QSize(roomWidth, 1); }
+
+private:
+    int roomWidth;
+};
+
+class NewTabButtonPlacer : public QObject
+{
+public:
+    NewTabButtonPlacer(QTabWidget *tabs, QToolButton *button, int room)
+        : QObject(button), tabs(tabs), bar(tabs->tabBar()), button(button), room(room)
+    {
+        tabs->installEventFilter(this);
+        bar->installEventFilter(this);
+        connect(bar, &QTabBar::tabMoved, this, [this]() { schedule(); });
+        connect(bar, &QTabBar::currentChanged, this, [this]() { schedule(); });
+        schedule();
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Show:
+        case QEvent::LayoutRequest:
+            schedule();
+            break;
+        default:
+            break;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    // Wait until Qt has finished laying out the tabs before measuring them
+    void schedule()
+    {
+        if (pending) return;
+        pending = true;
+        QTimer::singleShot(0, this, [this]() { pending = false; place(); });
+    }
+
+    void place()
+    {
+        const QRect barRect = bar->geometry();
+        const int size = qMax(barRect.height() - 6, 20);
+        const int y = barRect.top() + (barRect.height() - size) / 2;
+
+        // Centered in the reserved room on the right
+        const int roomX = tabs->width() - room + (room - size) / 2;
+
+        int x = barRect.left() + 3;
+        if (bar->sizeHint().width() > bar->width()) {
+            // Tabs overflow and the bar shows scroll arrows: park in the room
+            x = roomX;
+        } else if (bar->count() > 0) {
+            const QRect last = bar->tabRect(bar->count() - 1);
+            x = qMin(bar->mapTo(tabs, last.topRight()).x() + 4, roomX);
+        }
+
+        button->setFixedSize(size, size);
+        button->move(x, y);
+        button->raise();
+    }
+
+    QTabWidget *tabs;
+    QTabBar *bar;
+    QToolButton *button;
+    int room;
+    bool pending = false;
+};
+
+} // namespace
 
 void TerminalWindow::setupUI()
 {
@@ -68,6 +157,24 @@ void TerminalWindow::setupUI()
     connect(tabWidget->tabBar(), &QTabBar::customContextMenuRequested, 
             this, &TerminalWindow::showTabContextMenu);
 
+    // Browser-style "+" button right after the last tab: same as "New Tab"
+    QToolButton *newTabButton = new QToolButton(tabWidget);
+    newTabButton->setText("+");
+    newTabButton->setToolTip("New Tab");
+    newTabButton->setAutoRaise(true);
+    newTabButton->setFocusPolicy(Qt::NoFocus);
+    QFont plusFont = newTabButton->font();
+    plusFont.setBold(true);
+    plusFont.setPointSizeF(plusFont.pointSizeF() * 1.3);
+    newTabButton->setFont(plusFont);
+    connect(newTabButton, &QToolButton::clicked, this, &TerminalWindow::newTab);
+
+    const int newTabButtonRoomWidth = 34;
+    tabWidget->setCornerWidget(new NewTabButtonRoom(newTabButtonRoomWidth, tabWidget),
+                               Qt::TopRightCorner);
+
+    new NewTabButtonPlacer(tabWidget, newTabButton, newTabButtonRoomWidth);
+
     mainSplitter->addWidget(tabWidget);
     
     // Use stretch factors for better proportion control
@@ -108,6 +215,9 @@ void TerminalWindow::setupMenus()
     
     editMenu->addAction("Select &All", this, &TerminalWindow::selectAllText, QKeySequence::SelectAll);
     editMenu->addSeparator();
+    // Not QKeySequence::Find: that is Ctrl+F, which bash uses to move forward a character
+    editMenu->addAction("&Find...", this, &TerminalWindow::findInTerminal, QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_F));
+    editMenu->addSeparator();
     
     editMenu->addAction("&Clear", this, [this]() {
         QTermWidget *terminal = getCurrentTerminal();
@@ -147,6 +257,37 @@ void TerminalWindow::setupMenus()
     aboutAction->setStatusTip("Show application information");
     connect(aboutAction, &QAction::triggered, this, &TerminalWindow::showAbout);
     helpMenu->addAction(aboutAction);
+
+    // One-click Find on the right end of the menu bar
+    // as a small outlined pill in the app's link blue, so it stands out from the menus
+    QWidget *findCorner = new QWidget(menuBar);
+    QHBoxLayout *findLayout = new QHBoxLayout(findCorner);
+    findLayout->setContentsMargins(0, 2, 8, 2);
+    findButton = new QToolButton(findCorner);
+    findButton->setText("🔍 Find");
+    findButton->setToolTip("Find in terminal (Ctrl+Shift+F)");
+    findButton->setFocusPolicy(Qt::NoFocus);
+    findButton->setCursor(Qt::PointingHandCursor);
+    findButton->setCheckable(true);  // stays pressed while the current tab's find bar is open
+    findButton->setStyleSheet(
+        "QToolButton { color: #0066cc; font-weight: bold; background: rgba(0, 102, 204, 0.07);"
+        "  border: 1px solid rgba(0, 102, 204, 0.45); border-radius: 10px; padding: 1px 10px; }"
+        "QToolButton:hover { background: rgba(0, 102, 204, 0.16); }"
+        "QToolButton:pressed { background: rgba(0, 102, 204, 0.26); }"
+        "QToolButton:checked { color: white; background: #0066cc; border-color: #0066cc; }"
+        "QToolButton:checked:hover { background: #0059b3; }"
+        "QToolButton:disabled { color: #a0a0a0; background: transparent;"
+        "  border-color: rgba(0, 0, 0, 0.18); }");
+    // Some desktop styles (e.g. GTK) ignore a style sheet's text colour and
+    // weight, so set them on the font and palette too; updateFindButton()
+    // switches the text to white while the bar is open
+    QFont findFont = findButton->font();
+    findFont.setBold(true);
+    findButton->setFont(findFont);
+    findLayout->addWidget(findButton);
+    connect(findButton, &QToolButton::clicked, this, &TerminalWindow::toggleFindBar);
+    menuBar->setCornerWidget(findCorner, Qt::TopRightCorner);
+    updateFindButton();
 }
 
 void TerminalWindow::setupConnectionTree()

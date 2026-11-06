@@ -2,6 +2,7 @@
 // button and tab menu that show them with "Open in browser" / "Copy address"
 #include "terminalwindow.h"
 #include "inwindowdialog.h"
+#include "tunnelsdialog.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -13,6 +14,7 @@
 #include <QStatusBar>
 #include <QTcpServer>
 #include <QToolButton>
+#include <QTreeWidgetItem>
 #include <QUrl>
 
 namespace {
@@ -188,4 +190,28 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
     }
     QAction *note = menu->addAction("Tunnels close when the SSH session ends");
     note->setEnabled(false);
+}
+
+// Connection menu > Tunnels...: edit the saved connection's port forwards.
+// They apply to SSH tabs opened from now on; open tabs keep theirs.
+void TerminalWindow::editTunnels(QTreeWidgetItem *item)
+{
+    if (!item) return;
+    int index = item->data(0, Qt::UserRole + 1).toInt();
+    if (index < 0 || index >= connections.size()) {
+        InWindowDialog::warning(this, "Error", "Connection not found.");
+        return;
+    }
+
+    TunnelsDialog dialog(connections[index], this);
+    if (InWindowDialog::exec(&dialog) != QDialog::Accepted) return;
+
+    QList<SSHTunnel> tunnels = dialog.tunnels();
+    if (tunnels == connections[index].tunnels) return;
+    connections[index].tunnels = tunnels;
+    QString name = connections[index].name;
+    saveConnections();
+    refreshConnectionTree();
+    updateStatusBar();
+    statusBar()->showMessage(QString("Saved tunnels of %1 - they start with its next SSH tab").arg(name), 5000);
 }

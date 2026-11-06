@@ -19,6 +19,21 @@ void TerminalWindow::setupFileBrowserDock()
     fileBrowserDock->setObjectName("FileBrowserDock");
     fileBrowserDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea |
                                      Qt::BottomDockWidgetArea);
+    // Qt's own float and close buttons are tiny, so give them bundled icons
+    // drawn larger and a round grey back on hover, like the window's own buttons
+    fileBrowserDock->setStyleSheet(
+        "QDockWidget { titlebar-close-icon: url(:/icons/dock-close.png);"
+        "  titlebar-normal-icon: url(:/icons/dock-float.png); }"
+        "QDockWidget::close-button, QDockWidget::float-button {"
+        "  subcontrol-origin: padding; subcontrol-position: right center;"
+        "  min-width: 22px; min-height: 22px; icon-size: 12px;"
+        "  border: none; border-radius: 11px; background: transparent; }"
+        "QDockWidget::close-button { right: 3px; }"
+        "QDockWidget::float-button { right: 29px; }"
+        "QDockWidget::close-button:hover, QDockWidget::float-button:hover {"
+        "  background: rgba(0, 0, 0, 0.09); }"
+        "QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {"
+        "  background: rgba(0, 0, 0, 0.16); }");
 
     fileBrowserStack = new QStackedWidget(fileBrowserDock);
     // Tabs without a server still get the local folder, under a note
@@ -34,10 +49,15 @@ void TerminalWindow::setupFileBrowserDock()
     addDockWidget(Qt::RightDockWidgetArea, fileBrowserDock);
     fileBrowserDock->hide();
 
-    // Panes connect to the server only while the dock is open
+    // Panes connect to the server only while the dock is open: closing it
+    // logs them out, and the shown tab's pane logs back in when it reopens
     connect(fileBrowserDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
-        if (visible) updateFileBrowser();
-        else if (hostScanTab) hostScanTab->takeBackImportSection();  // Keep them reachable
+        if (visible) {
+            updateFileBrowser();
+            return;
+        }
+        for (FileBrowserPane *pane : qAsConst(fileBrowserPanes)) pane->suspendConnection();
+        if (hostScanTab) hostScanTab->takeBackImportSection();  // Keep them reachable
     });
 }
 
@@ -103,6 +123,7 @@ void TerminalWindow::updateFileBrowser()
             removeFileBrowserPane(terminal);
         });
     }
+    if (fileBrowserDock->isVisible()) pane->resumeConnection();
     fileBrowserStack->setCurrentWidget(pane);
 }
 

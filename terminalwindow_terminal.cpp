@@ -9,6 +9,10 @@
 #include <QTimer>
 #include <QPointer>
 #include <QApplication>
+#include <QLineEdit>
+#include <QEvent>
+#include <QToolButton>
+#include <functional>
 #include <QStatusBar>
 #include <QClipboard>
 #include <QDir>
@@ -124,6 +128,30 @@ static bool targetIsConnection(const SSHTarget &target, const SSHConnection &con
            target.user == connection.username && target.port == connection.port;
 }
 
+// The terminal's find bar (part of qtermwidget), or nullptr
+static QWidget *findBarOf(QTermWidget *terminal)
+{
+    return terminal ? terminal->findChild<QWidget*>("SearchBar") : nullptr;
+}
+
+// Tells the window whenever a terminal's find bar opens or closes (Esc, its
+// close button, Ctrl+Shift+F), so the menu bar Find button can follow it
+class FindBarWatcher : public QObject
+{
+public:
+    FindBarWatcher(QWidget *bar, std::function<void()> changed)
+        : QObject(bar), changed(std::move(changed)) { bar->installEventFilter(this); }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Show || event->type() == QEvent::Hide) changed();
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void()> changed;
+};
+
 // Ends with a login question (password, passphrase or host key), so not logged in yet
 static bool waitingForLoginAnswer(const QString &output)
 {
@@ -146,6 +174,12 @@ QTermWidget* TerminalWindow::createTerminalWidget()
     terminal->setContextMenuPolicy(Qt::CustomContextMenu);
     terminal->setWorkingDirectory(startFolder());
     
+    if (QWidget *bar = findBarOf(terminal)) {
+        new FindBarWatcher(bar, [this, terminal]() {
+            if (terminal == getCurrentTerminal()) updateFindButton();
+        });
+    }
+
     // Common signal connections
     connect(terminal, &QWidget::customContextMenuRequested, 
             this, &TerminalWindow::showContextMenu);
@@ -220,8 +254,8 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
             if (!guard) return;
             InWindowDialog::warning(this, "Tunnels Not Started",
                 QString("%1 opens without %2:\n\n%3\n\n"
-                        "Close whatever uses the port, or change the port in the connection's "
-                        "Tunnels tab, then connect again.")
+                        "Close whatever uses the port, or change the port (right-click the connection > "
+                        "Tunnels...), then connect again.")
                     .arg(connection.name,
                          skippedTunnels.size() == 1 ? QString("this tunnel") : QString("these tunnels"),
                          skippedTunnels.join("\n")));
@@ -267,6 +301,52 @@ void TerminalWindow::chooseStartFolder()
 QTermWidget* TerminalWindow::getCurrentTerminal()
 {
     return qobject_cast<QTermWidget*>(tabWidget->currentWidget());
+}
+
+// Menu bar Find button: each click opens or closes the bar
+void TerminalWindow::toggleFindBar()
+{
+    QTermWidget *terminal = getCurrentTerminal();
+    if (terminal) terminal->toggleShowSearchBar();
+    updateFindButton();
+}
+
+void TerminalWindow::updateFindButton()
+{
+    if (!findButton) return;
+    QWidget *bar = findBarOf(getCurrentTerminal());
+    findButton->setEnabled(getCurrentTerminal() != nullptr);
+    const bool open = bar && bar->isVisible();
+    findButton->setChecked(open);
+    QPalette palette = findButton->palette();
+    const QColor text = open ? QColor(Qt::white) : QColor("#0066cc");
+    // Grey when disabled (a tab with no terminal, such as SSH Scan), so it
+    // doesn't look clickable
+    for (QPalette::ColorRole role : {QPalette::ButtonText, QPalette::WindowText, QPalette::Text}) {
+        palette.setColor(QPalette::Active, role, text);
+        palette.setColor(QPalette::Inactive, role, text);
+        palette.setColor(QPalette::Disabled, role, QColor("#a0a0a0"));
+    }
+    findButton->setPalette(palette);
+    findButton->setToolTip(findButton->isEnabled() ? "Find in terminal (Ctrl+Shift+F)"
+                                                   : "Find works in terminal tabs");
+}
+
+void TerminalWindow::findInTerminal()
+{
+    QTermWidget *terminal = getCurrentTerminal();
+    if (!terminal) return;
+
+    // qtermwidget's find bar; if it's open but the terminal has the keyboard,
+    // go back to the bar instead of closing it
+    QWidget *searchBar = findBarOf(terminal);
+    QLineEdit *searchText = searchBar ? searchBar->findChild<QLineEdit*>() : nullptr;
+    if (searchBar && searchText && searchBar->isVisible() && !searchBar->isAncestorOf(QApplication::focusWidget())) {
+        searchText->setFocus(Qt::ShortcutFocusReason);
+        searchText->selectAll();
+        return;
+    }
+    terminal->toggleShowSearchBar();
 }
 
 QString TerminalWindow::getNextTabTitle()
@@ -341,6 +421,7 @@ void TerminalWindow::onTabChanged(int index)
 {
     Q_UNUSED(index)
     updateStatusBar();
+    updateFindButton();
     if (fileBrowserDock) updateFileBrowser();
     
     // Focus the current terminal

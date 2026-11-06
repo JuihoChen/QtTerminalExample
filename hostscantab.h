@@ -15,10 +15,12 @@ class QBoxLayout;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QNetworkAddressEntry;
 class QProcess;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
+class PortComboBox;
 class QThread;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -70,6 +72,8 @@ private slots:
 
 private:
     void setDefaultRange();
+    void followStartAddress(const QString &text);
+    static bool localScanAddress(QNetworkAddressEntry *result);
     void handleOutput(const QByteArray &data);
     void handleLine(const QString &line);
     // What the port check found for one host
@@ -90,7 +94,7 @@ private:
 
     QLineEdit *m_startEdit;
     QLineEdit *m_endEdit;
-    QSpinBox *m_portSpin;
+    PortComboBox *m_portCombo;
     QSpinBox *m_timeoutSpin;
     QComboBox *m_scanFromCombo;
     QLabel *m_scanFromNote;
@@ -106,6 +110,7 @@ private:
     QBoxLayout *m_importRow;
     QBoxLayout *m_layout;
     bool m_rangeEdited;
+    bool m_endEdited;         // The user typed an end address: stop following the start
 
     // Scan in progress
     QProcess *m_process;
