@@ -1,5 +1,6 @@
 // SSH host scanner: find hosts with SSH open in an IPv4 range and import them
 #include "hostscantab.h"
+#include "proxybrowser.h"
 #include "commandsafety.h"
 #include "sftpworker.h"
 #include "inwindowdialog.h"
@@ -1123,8 +1124,8 @@ void HostScanTab::forwardBmcs()
                            "to open through the proxy");
     socksRow->addWidget(copyButton);
     layout->addLayout(socksRow);
-    QLabel *socksNote = new QLabel("Simplest for a whole rack: one port. Set a browser's SOCKS5 proxy "
-                                   "to it once, then open each BMC by its own IP.", &dialog);
+    QLabel *socksNote = new QLabel("Simplest for a whole rack: one port. The tunnels menu then lists each "
+                                   "BMC, to open in a browser through the proxy by its own IP.", &dialog);
     socksNote->setWordWrap(true);
     socksNote->setStyleSheet("QLabel { color: #666; margin-left: 22px; }");
     layout->addWidget(socksNote);
@@ -1207,7 +1208,15 @@ void HostScanTab::forwardBmcs()
                        .arg(added.size()).arg(via.name)
                        .arg(added.isEmpty() ? 0 : added.first().listenPort)
                        .arg(added.size() > 1 ? QString("-%1").arg(added.last().listenPort) : QString()));
-    } else if (!socks) {
+    } else {
+        // The proxy browser offers these BMCs as its start page, the first one
+        // first; those forwarded already count too, since the proxy reaches them
+        int port = socks ? socks->listenPort : socksPort->value();
+        QList<quint32> chosen = copyableAddresses();
+        for (int i = chosen.size() - 1; i >= 0; --i)
+            ProxyBrowser::remember(port, "https://" + formatIPv4(chosen[i]) + "/");
+    }
+    if (!perBmc->isChecked() && !socks) {
         SSHTunnel t;
         t.type = SSHTunnel::Dynamic;
         t.listenPort = socksPort->value();
@@ -1215,8 +1224,9 @@ void HostScanTab::forwardBmcs()
         t.targetPort = 0;
         t.name = "BMCs";
         added << t;
-        showStatus(QString("Added a SOCKS proxy on port %1 to %2. Set a browser's SOCKS5 proxy to "
-                           "localhost:%1 to open the BMCs by IP.").arg(t.listenPort).arg(via.name));
+        showStatus(QString("Added a SOCKS proxy on port %1 to %2. Once its SSH tab is logged in, "
+                           "its tunnels menu opens each BMC through it by IP.")
+                       .arg(t.listenPort).arg(via.name));
     }
     emit addTunnels(via, added, !connectNow->isHidden() && connectNow->isChecked());
 }

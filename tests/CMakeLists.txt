@@ -7,6 +7,7 @@ find_package(Qt5 COMPONENTS Test REQUIRED)
 # The app sources the tests reach into, built once and shared by all tests
 add_library(qtterminal_testable STATIC
     ../hostscantab.cpp
+    ../proxybrowser.cpp
     ../sftpworker.cpp
     ../remotefilemodel.cpp
     ../inwindowdialog.cpp
@@ -30,6 +31,7 @@ add_qt_test(tst_connections)
 add_qt_test(tst_hostscan)
 add_qt_test(tst_filebrowser)
 add_qt_test(tst_portcombobox)
+add_qt_test(tst_proxybrowser)
 
 # Starts the real app on the offscreen platform with an empty config folder
 # and checks it is still running a few seconds later (no crash at startup)

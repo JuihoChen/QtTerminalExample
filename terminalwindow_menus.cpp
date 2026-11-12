@@ -130,11 +130,6 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
             menu.addAction("📤 Upload File to Server...", [this, connection]() {
                 uploadFileToSSH(connection);
             });
-
-            if (!activeTunnels(terminal).isEmpty()) {
-                QMenu *tunnelsMenu = menu.addMenu("🔀 Tunnels");
-                addTunnelActions(tunnelsMenu, terminal);
-            }
         }
     }
     
@@ -144,6 +139,11 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
         tabWidget->setCurrentIndex(tabIndex);
         showFileBrowser();
     });
+
+    if (isSSH && !activeTunnels(terminal).isEmpty()) {
+        QMenu *tunnelsMenu = menu.addMenu("🔀 Tunnels");
+        addTunnelActions(tunnelsMenu, terminal);
+    }
     
     menu.addSeparator();
     menu.addAction("🎨 Change Color Scheme", this, &TerminalWindow::changeColorScheme);
