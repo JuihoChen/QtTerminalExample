@@ -467,8 +467,12 @@ void TerminalWindow::onTerminalFinished()
 
 void TerminalWindow::copyClipboard()
 {
+        if (HostScanTab *scan = qobject_cast<HostScanTab*>(tabWidget->currentWidget())) {
+            scan->copySelection();
+            return;
+        }
         QTermWidget *terminal = getCurrentTerminal();
-        if (!terminal) return;  // The scan tab has no terminal
+        if (!terminal) return;
         //if (terminal) terminal->copyClipboard();
         QString text = terminal->selectedText(true);
         if (!text.isEmpty()) QApplication::clipboard()->setText(text);

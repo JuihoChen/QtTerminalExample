@@ -65,6 +65,14 @@ public:
                                      bool (*canBind)(int port));
     static bool parseIPv4(const QString &text, quint32 *address);
     static QString formatIPv4(quint32 address);
+    // A result cell as it is copied: the IP without its "(saved)" mark
+    static QString cellText(const QTreeWidgetItem *row, int column);
+
+    // Copies the selected results (Ctrl+C, or Edit > Copy while this tab is shown)
+    void copySelection();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 signals:
     // The new connections to save; hosts that already have one are left out
@@ -80,6 +88,7 @@ private slots:
     void importChecked();
     void updateImportButton();
     void forwardBmcs();
+    void showResultsMenu(const QPoint &pos);
 
 private:
     void setDefaultRange();
@@ -94,6 +103,10 @@ private:
     void scriptEnded(int exitCode, bool crashed);
     QString stderrTail() const;
     QTreeWidgetItem *rowFor(quint32 address);
+    QList<QTreeWidgetItem *> copyRows(QTreeWidgetItem *clicked) const;
+    // One line per row: that column, or the shown columns tab-separated (column -1)
+    QString copyText(const QList<QTreeWidgetItem *> &rows, int column) const;
+    static void copyToClipboard(const QString &text);
     void setRowSsh(QTreeWidgetItem *row, PortState state);
     void setRowBmc(quint32 address);
     void updateForwardButton();
