@@ -27,6 +27,7 @@ namespace BmcPower {
 namespace {
 
 const char *kSettingsGroup = "bmcCredentials";
+const char *kSkipConfirmGroup = "bmcSkipConfirmation";
 
 // Single-quoted for sh, whatever it holds
 QString shellQuote(const QString &text)
@@ -329,7 +330,48 @@ QString confirmText(Action action, const QString &bmc)
     }
 }
 
+// "Really ...?" with No as the default and a "Don't ask again" box
+bool confirm(QWidget *parent, Action action, const QString &host, const QString &bmc)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle(actionLabel(action));
+    dialog.setMinimumWidth(420);
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    QLabel *text = new QLabel(confirmText(action, bmc), &dialog);
+    text->setWordWrap(true);
+    layout->addWidget(text);
+    QCheckBox *dontAsk = new QCheckBox("Don't ask again for this BMC", &dialog);
+    dontAsk->setToolTip("Shut down, power off, power cycle and reset then start at once for this BMC. "
+                        "Turn the question back on from its BMC power menu.");
+    layout->addWidget(dontAsk);
+    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Yes | QDialogButtonBox::No, &dialog);
+    QPushButton *no = buttons->button(QDialogButtonBox::No);
+    no->setDefault(true);
+    no->setFocus();
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (InWindowDialog::exec(&dialog) != QDialog::Accepted) return false;
+    if (dontAsk->isChecked()) setSkipsConfirmation(host, true);
+    return true;
+}
+
 } // namespace
+
+bool skipsConfirmation(const QString &host)
+{
+    QSettings settings;
+    settings.beginGroup(kSkipConfirmGroup);
+    return settings.value(settingsKey(host), false).toBool();
+}
+
+void setSkipsConfirmation(const QString &host, bool skip)
+{
+    QSettings settings;
+    settings.beginGroup(kSkipConfirmGroup);
+    if (skip) settings.setValue(settingsKey(host), true);
+    else settings.remove(settingsKey(host));
+}
 
 QString actionLabel(Action action)
 {
@@ -637,11 +679,7 @@ void run(QWidget *parent, const SSHConnection &via, bool throughVia, const QStri
                                     QString("%1 is still busy with the last power command.").arg(bmc));
         return;
     }
-    if (needsConfirmation(action)
-        && InWindowDialog::question(parent, actionLabel(action), confirmText(action, bmc),
-                                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
-        return;
-    }
+    if (needsConfirmation(action) && !skipsConfirmation(host) && !confirm(parent, action, host, bmc)) return;
     Credentials credentials = savedCredentials(host);
     if (!credentials.isValid() && !askCredentials(parent, host, name, &credentials)) return;
 
@@ -663,10 +701,12 @@ void addActions(QMenu *menu, QWidget *parent, const SSHConnection &via, bool thr
     add("🔎 Power status", Status);
     menu->addSeparator();
     add("▶ Power on", On);
-    add("⏻ Shut down (graceful)...", GracefulOff);
-    add("⏹ Power off (force)...", ForceOff);
-    add("🔁 Power cycle...", Cycle);
-    add("↻ Reset...", Reset);
+    // "..." means a question comes first; without it the action starts at once
+    const QString more = skipsConfirmation(host) ? QString() : QStringLiteral("...");
+    add("⏻ Shut down (graceful)" + more, GracefulOff);
+    add("⏹ Power off (force)" + more, ForceOff);
+    add("🔁 Power cycle" + more, Cycle);
+    add("↻ Reset" + more, Reset);
     menu->addSeparator();
     QString where = throughVia ? QString("Runs on %1 (Redfish, then ipmitool)").arg(via.name)
                                : QStringLiteral("Runs on this computer (Redfish, then ipmitool)");
@@ -676,6 +716,11 @@ void addActions(QMenu *menu, QWidget *parent, const SSHConnection &via, bool thr
         QString user = savedCredentials(host).username;
         menu->addAction(QString("Forget saved BMC login (%1)").arg(user), parent, [host]() {
             forgetCredentials(host);
+        });
+    }
+    if (skipsConfirmation(host)) {
+        menu->addAction("Ask before shut down, power off, cycle and reset again", parent, [host]() {
+            setSkipsConfirmation(host, false);
         });
     }
 }

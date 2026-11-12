@@ -44,6 +44,10 @@ Credentials savedCredentials(const QString &host);
 void saveCredentials(const QString &host, const Credentials &credentials);
 void forgetCredentials(const QString &host);
 
+// "Don't ask again for this BMC" on the "Really ...?" question, per BMC
+bool skipsConfirmation(const QString &host);
+void setSkipsConfirmation(const QString &host, bool skip);
+
 // The script for "sh -s" on the host that reaches the BMC
 QByteArray script(const QString &host, Action action, const Credentials &credentials);
 

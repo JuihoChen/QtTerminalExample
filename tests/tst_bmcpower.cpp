@@ -266,6 +266,18 @@ private slots:
         forgetCredentials("10.0.0.1");
         QVERIFY(!savedCredentials("10.0.0.1").isValid());
     }
+
+    void dontAskAgainPerBmc()
+    {
+        QCoreApplication::setOrganizationName("tst_bmcpower");
+        setSkipsConfirmation("10.0.0.1", false);
+        QVERIFY(!skipsConfirmation("10.0.0.1"));
+        setSkipsConfirmation("10.0.0.1", true);
+        QVERIFY(skipsConfirmation("10.0.0.1"));
+        QVERIFY(!skipsConfirmation("10.0.0.2"));
+        setSkipsConfirmation("10.0.0.1", false);
+        QVERIFY(!skipsConfirmation("10.0.0.1"));
+    }
 };
 
 QTEST_MAIN(TestBmcPower)
