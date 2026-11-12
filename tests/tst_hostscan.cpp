@@ -1,5 +1,8 @@
 #include <QtTest>
 #include <QTcpServer>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QTreeWidget>
 
 #include "hostscantab.h"
 
@@ -117,6 +120,46 @@ private slots:
         QCOMPARE(HostScanTab::pickLocalPorts(2, 18443, taken, noOdd), (QList<int>{18444, 18446}));
         // Never below 1024, which needs admin rights
         QCOMPARE(HostScanTab::pickLocalPorts(1, 443, QSet<int>(), all), QList<int>{1024});
+    }
+
+    // The IP cell can carry a "(saved)" mark; copies get just the address
+    void cellTextDropsSavedMark()
+    {
+        QTreeWidgetItem row;
+        row.setText(0, "10.254.192.16  (saved)");
+        row.setData(0, Qt::UserRole, quint32(0x0AFEC010));
+        row.setText(1, "00:e0:4c:36:00:0b");
+        QCOMPARE(HostScanTab::cellText(&row, 0), QString("10.254.192.16"));
+        QCOMPARE(HostScanTab::cellText(&row, 1), QString("00:e0:4c:36:00:0b"));
+    }
+
+    // Ctrl+C copies the clicked column of the selected rows, in list order
+    void copySelectedAddresses()
+    {
+        HostScanTab tab{QList<SSHConnection>(), QStringList()};
+        QTreeWidget *list = tab.findChild<QTreeWidget *>();
+        QVERIFY(list);
+        QList<QTreeWidgetItem *> rows;
+        for (quint32 last : {1u, 16u, 32u}) {
+            QTreeWidgetItem *row = new QTreeWidgetItem(list);
+            row->setText(0, HostScanTab::formatIPv4(0x0AFEC000 + last));
+            row->setData(0, Qt::UserRole, 0x0AFEC000 + last);
+            row->setText(1, QString("00:00:00:00:00:%1").arg(last, 2, 16, QChar('0')));
+            row->setText(2, "Yes");
+            rows << row;
+        }
+        rows[2]->setSelected(true);
+        rows[0]->setSelected(true);
+        list->setCurrentItem(rows[2], 1, QItemSelectionModel::NoUpdate);
+        tab.copySelection();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QString("00:00:00:00:00:01\n00:00:00:00:00:20"));
+        list->setCurrentItem(rows[2], 0, QItemSelectionModel::NoUpdate);
+        tab.copySelection();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QString("10.254.192.1\n10.254.192.32"));
+        list->setCurrentItem(rows[2], 2, QItemSelectionModel::NoUpdate);
+        tab.copySelection();
+        QCOMPARE(QGuiApplication::clipboard()->text(),
+                 QString("10.254.192.1\t00:00:00:00:00:01\tYes\n10.254.192.32\t00:00:00:00:00:20\tYes"));
     }
 
     // Runs the scan script on this machine against 127.0.0.1 and a port

@@ -20,7 +20,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QNetworkInterface>
 #include <QNetworkProxy>
@@ -172,6 +174,10 @@ HostScanTab::HostScanTab(const QList<SSHConnection> &connections, const QStringL
     m_results->setColumnHidden(NameColumn, true);
     m_results->setColumnHidden(BmcColumn, true);
     connect(m_results, &QTreeWidget::itemChanged, this, &HostScanTab::updateImportButton);
+    // Right-click or Ctrl+C copies addresses out of the list
+    m_results->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_results, &QWidget::customContextMenuRequested, this, &HostScanTab::showResultsMenu);
+    m_results->installEventFilter(this);
     layout->addWidget(m_results, 1);
 
     m_statusLabel = new QLabel("Hosts that answer a ping, have the port open, or appear in the "
@@ -956,6 +962,104 @@ void HostScanTab::setScanning(bool scanning)
     m_bmcCheck->setEnabled(!scanning);
     updateImportButton();
     updateForwardButton();
+}
+
+QString HostScanTab::cellText(const QTreeWidgetItem *row, int column)
+{
+    if (!row) return QString();
+    // The IP cell can read "10.0.0.5  (saved)": copy just the address
+    if (column == IpColumn) {
+        QVariant address = row->data(IpColumn, Qt::UserRole);
+        if (address.isValid()) return formatIPv4(address.toUInt());
+    }
+    return row->text(column).trimmed();
+}
+
+// Selected rows in the order they are shown, or the row under the mouse when
+// it isn't part of the selection
+QList<QTreeWidgetItem *> HostScanTab::copyRows(QTreeWidgetItem *clicked) const
+{
+    QList<QTreeWidgetItem *> rows;
+    if (clicked && !clicked->isSelected()) {
+        rows << clicked;
+        return rows;
+    }
+    for (int i = 0; i < m_results->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *row = m_results->topLevelItem(i);
+        if (row->isSelected()) rows << row;
+    }
+    if (rows.isEmpty() && m_results->currentItem()) rows << m_results->currentItem();
+    return rows;
+}
+
+QString HostScanTab::copyText(const QList<QTreeWidgetItem *> &rows, int column) const
+{
+    QStringList lines;
+    for (QTreeWidgetItem *row : rows) {
+        if (column >= 0) {
+            QString text = cellText(row, column);
+            if (!text.isEmpty()) lines << text;
+            continue;
+        }
+        // The whole row: the shown columns, tab-separated so it pastes into a spreadsheet
+        QStringList cells;
+        for (int c = 0; c < m_results->columnCount(); ++c) {
+            if (!m_results->isColumnHidden(c)) cells << cellText(row, c);
+        }
+        lines << cells.join('\t');
+    }
+    return lines.join('\n');
+}
+
+void HostScanTab::copyToClipboard(const QString &text)
+{
+    if (!text.isEmpty()) QApplication::clipboard()->setText(text);
+}
+
+// Ctrl+C: the clicked column of the selected rows (just the IPs when an IP
+// was clicked), or whole rows when nothing narrower makes sense
+void HostScanTab::copySelection()
+{
+    int column = m_results->currentColumn();
+    if (column != IpColumn && column != MacColumn && column != NameColumn) column = -1;
+    copyToClipboard(copyText(copyRows(nullptr), column));
+}
+
+void HostScanTab::showResultsMenu(const QPoint &pos)
+{
+    QTreeWidgetItem *clicked = m_results->itemAt(pos);
+    QList<QTreeWidgetItem *> rows = copyRows(clicked);
+    if (rows.isEmpty()) return;
+    bool many = rows.size() > 1;
+
+    QMenu menu(this);
+    menu.addAction(many ? QString("Copy %1 IP addresses").arg(rows.size()) : QString("Copy IP address"),
+                   this, [this, rows]() { copyToClipboard(copyText(rows, IpColumn)); });
+    QAction *mac = menu.addAction(many ? QString("Copy MAC addresses") : QString("Copy MAC address"),
+                                  this, [this, rows]() { copyToClipboard(copyText(rows, MacColumn)); });
+    mac->setEnabled(!copyText(rows, MacColumn).isEmpty());
+    if (!m_results->isColumnHidden(NameColumn)) {
+        QAction *name = menu.addAction(many ? QString("Copy names") : QString("Copy name"),
+                                       this, [this, rows]() { copyToClipboard(copyText(rows, NameColumn)); });
+        name->setEnabled(!copyText(rows, NameColumn).isEmpty());
+    }
+    menu.addAction(many ? QString("Copy %1 rows").arg(rows.size()) : QString("Copy row"),
+                   this, [this, rows]() { copyToClipboard(copyText(rows, -1)); });
+    menu.exec(m_results->viewport()->mapToGlobal(pos));
+}
+
+bool HostScanTab::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_results && (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)) {
+        QKeyEvent *key = static_cast<QKeyEvent *>(event);
+        if (key->matches(QKeySequence::Copy)) {
+            // Take Ctrl+C from the window's Edit > Copy, which copies terminal text
+            event->accept();
+            if (event->type() == QEvent::KeyPress) copySelection();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void HostScanTab::updateImportButton()
