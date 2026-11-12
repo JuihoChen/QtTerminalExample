@@ -1,5 +1,6 @@
 // SSH host scanner: find hosts with SSH open in an IPv4 range and import them
 #include "hostscantab.h"
+#include "bmcpower.h"
 #include "proxybrowser.h"
 #include "commandsafety.h"
 #include "sftpworker.h"
@@ -594,6 +595,7 @@ void HostScanTab::startScan()
     m_ports.clear();
     m_web.clear();
     m_redfish.clear();
+    m_power.clear();
     m_names.clear();
     m_noCurl = false;
     m_findBmcs = m_bmcCheck->isChecked();
@@ -855,6 +857,10 @@ void HostScanTab::setRowBmc(quint32 address)
                        : QStringLiteral("Port 443 is open, but it didn't answer Redfish, so it is "
                                         "probably not a BMC");
     }
+    if (m_power.contains(address)) {
+        bmc += "  ·  " + BmcPower::stateLabel(m_power.value(address));
+        tip += "\n\nPower state from the last power command (right-click for BMC power)";
+    }
     row->setText(BmcColumn, bmc);
     row->setToolTip(BmcColumn, tip);
     row->setForeground(BmcColumn, color);
@@ -1045,6 +1051,29 @@ void HostScanTab::showResultsMenu(const QPoint &pos)
     }
     menu.addAction(many ? QString("Copy %1 rows").arg(rows.size()) : QString("Copy row"),
                    this, [this, rows]() { copyToClipboard(copyText(rows, -1)); });
+
+    // A BMC found by the scan: power commands, run where the scan ran
+    quint32 address = clicked ? clicked->data(IpColumn, Qt::UserRole).toUInt() : 0;
+    if (clicked && !many && m_web.contains(address)) {
+        menu.addSeparator();
+        QMenu *power = menu.addMenu("⚡ BMC power");
+        const SSHConnection *via = scannedThrough();
+        if (!m_scanFromKey.isEmpty() && !via) {
+            power->setEnabled(false);
+            power->menuAction()->setToolTip("The connection this scan ran through is no longer saved");
+        } else {
+            BmcPower::Hooks hooks;
+            QPointer<HostScanTab> self = this;
+            hooks.status = [self](const QString &text) { if (self) self->showStatus(text); };
+            hooks.powerState = [self, address](const QString &state) {
+                if (!self || !self->m_rows.contains(address)) return;
+                self->m_power.insert(address, state);
+                self->setRowBmc(address);
+            };
+            BmcPower::addActions(power, this, via ? *via : SSHConnection(), via != nullptr,
+                                 formatIPv4(address), m_names.value(address), hooks);
+        }
+    }
     menu.exec(m_results->viewport()->mapToGlobal(pos));
 }
 

@@ -38,6 +38,7 @@ add_executable(QtTerminalExample
     connectiondialog.cpp
     tunnelsdialog.cpp
     proxybrowser.cpp
+    bmcpower.cpp
     hostscantab.cpp
     enhanced_qtermwidget.cpp
     AboutDialog.cpp

@@ -168,7 +168,8 @@ private:
     QString m_scanFromKey;            // Folder and name of the connection the last scan ran through
     QSet<quint32> m_web;              // Port 443 open
     QHash<quint32, QString> m_redfish;  // Answered Redfish: vendor and product
-    QHash<quint32, QString> m_names;  // From /etc/hosts or DNS on the scanning host   // From the ARP table and the scanning host's own addresses
+    QHash<quint32, QString> m_names;  // From /etc/hosts or DNS on the scanning host
+    QHash<quint32, QString> m_power;  // BMC power state from the last power command
 };
 
 #endif // HOSTSCANTAB_H

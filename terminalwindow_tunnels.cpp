@@ -1,6 +1,7 @@
 // SSH port forwarding: which tunnels a new SSH tab starts, and the status bar
 // button and tab menu that show them with "Open in browser" / "Copy address"
 #include "terminalwindow.h"
+#include "bmcpower.h"
 #include "inwindowdialog.h"
 #include "proxybrowser.h"
 #include "tunnelsdialog.h"
@@ -100,7 +101,35 @@ bool askStartUrl(QWidget *parent, int port, QString *url)
     return true;
 }
 
+// The BMC host of a plain https://<host>/ address, or empty for anything else
+QString bmcHostOf(const QString &url)
+{
+    QUrl u(url);
+    if (u.scheme() != "https" || u.host().isEmpty() || (u.port() != -1 && u.port() != 443)) return QString();
+    if (!u.path().isEmpty() && u.path() != "/") return QString();
+    return u.host();
+}
+
 } // namespace
+
+// "⚡ BMC power" for one BMC the tab's tunnels lead to. The commands run on
+// the tab's server, which reaches the BMC by its own address.
+void TerminalWindow::addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const QString &text,
+                                     const QString &host, const QString &name)
+{
+    SSHConnection via = terminal->property("sshConnection").value<SSHConnection>();
+    QMenu *power = menu->addMenu(text);
+    if (via.host.isEmpty()) {
+        power->setEnabled(false);
+        return;
+    }
+    BmcPower::Hooks hooks;
+    QPointer<TerminalWindow> self = this;
+    hooks.status = [self](const QString &message) {
+        if (self) self->statusBar()->showMessage(message, 8000);
+    };
+    BmcPower::addActions(power, this, via, true, host, name, hooks);
+}
 
 // The tunnels a new SSH tab for this connection can start. A local port that
 // is already taken (by another program, or by another tab of the same
@@ -223,6 +252,11 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
                 QApplication::clipboard()->setText(address);
                 statusBar()->showMessage("Copied " + address, 3000);
             });
+            // A forward to port 443 is most likely a BMC (the scan makes these)
+            if (https && tunnel.targetPort == 443 && !tunnel.targetHost.trimmed().isEmpty()
+                && tunnel.targetHost.trimmed() != "localhost") {
+                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power", tunnel.targetHost.trimmed(), tunnel.name.trimmed());
+            }
         } else if (tunnel.type == SSHTunnel::Dynamic) {
             int socksPort = tunnel.listenPort;
             // One click per BMC: the addresses used before on this proxy (and the
@@ -260,6 +294,22 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             menu->addAction(indent + (targets.isEmpty() ? "🌐 Open browser through this proxy..."
                                                         : "🌐 Open another address through this proxy..."),
                             this, [this, socksPort]() { openProxyBrowser(socksPort); });
+            // Power commands for the BMCs among them, run on the tab's server
+            QStringList bmcs;
+            for (const QString &url : targets) {
+                if (!bmcHostOf(url).isEmpty()) bmcs << url;
+            }
+            if (bmcs.size() == 1) {
+                const QString &url = bmcs.first();
+                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power · " + ProxyBrowser::label(url, names.value(url)),
+                                bmcHostOf(url), names.value(url));
+            } else if (!bmcs.isEmpty()) {
+                QMenu *powerMenu = menu->addMenu(QString(indent + "⚡ BMC power (%1)").arg(bmcs.size()));
+                for (const QString &url : ProxyBrowser::sortedByAddress(bmcs)) {
+                    addBmcPowerMenu(powerMenu, terminal, ProxyBrowser::label(url, names.value(url)),
+                                    bmcHostOf(url), names.value(url));
+                }
+            }
             QString proxy = QString("socks5://localhost:%1").arg(tunnel.listenPort);
             menu->addAction(QString(indent + "📋 Copy proxy address %1").arg(proxy), this, [this, proxy]() {
                 QApplication::clipboard()->setText(proxy);

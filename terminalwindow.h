@@ -118,6 +118,8 @@ private:
     void updateTunnelsButton();
     void addTunnelActions(QMenu *menu, QTermWidget *terminal);
     void openProxyBrowser(int port, const QString &startUrl = QString());
+    void addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const QString &text,
+                         const QString &host, const QString &name);
     QToolButton *tunnelsButton = nullptr;  // Status bar: the current SSH tab's tunnels
 
     // Connection management methods
