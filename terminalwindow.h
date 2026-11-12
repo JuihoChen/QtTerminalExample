@@ -117,7 +117,7 @@ private:
     void setupTunnelsButton();
     void updateTunnelsButton();
     void addTunnelActions(QMenu *menu, QTermWidget *terminal);
-    void openProxyBrowser(int port);
+    void openProxyBrowser(int port, const QString &startUrl = QString());
     QToolButton *tunnelsButton = nullptr;  // Status bar: the current SSH tab's tunnels
 
     // Connection management methods

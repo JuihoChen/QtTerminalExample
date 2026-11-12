@@ -1124,8 +1124,8 @@ void HostScanTab::forwardBmcs()
                            "to open through the proxy");
     socksRow->addWidget(copyButton);
     layout->addLayout(socksRow);
-    QLabel *socksNote = new QLabel("Simplest for a whole rack: one port. Tunnels > \"Open browser through "
-                                   "this proxy\" then opens each BMC by its own IP.", &dialog);
+    QLabel *socksNote = new QLabel("Simplest for a whole rack: one port. The tunnels menu then lists each "
+                                   "BMC, to open in a browser through the proxy by its own IP.", &dialog);
     socksNote->setWordWrap(true);
     socksNote->setStyleSheet("QLabel { color: #666; margin-left: 22px; }");
     layout->addWidget(socksNote);
@@ -1225,7 +1225,7 @@ void HostScanTab::forwardBmcs()
         t.name = "BMCs";
         added << t;
         showStatus(QString("Added a SOCKS proxy on port %1 to %2. Once its SSH tab is logged in, "
-                           "Tunnels > \"Open browser through this proxy\" opens the BMCs by IP.")
+                           "its tunnels menu opens each BMC through it by IP.")
                        .arg(t.listenPort).arg(via.name));
     }
     emit addTunnels(via, added, !connectNow->isHidden() && connectNow->isChecked());

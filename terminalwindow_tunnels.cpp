@@ -224,9 +224,26 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             });
         } else if (tunnel.type == SSHTunnel::Dynamic) {
             int socksPort = tunnel.listenPort;
-            menu->addAction(indent + "🌐 Open browser through this proxy...", this, [this, socksPort]() {
-                openProxyBrowser(socksPort);
-            });
+            // One click per BMC: the addresses used before on this proxy (and the
+            // BMCs the scan routed through it), then what this tab forwards to
+            // port 443, which the proxy reaches by its real IP as well
+            QStringList targets = ProxyBrowser::recentUrls(socksPort);
+            for (const SSHTunnel &other : tunnels) {
+                if (other.type == SSHTunnel::Local && other.targetPort == 443 && !other.targetHost.trimmed().isEmpty()) {
+                    QString url = ProxyBrowser::normalizeUrl(other.targetHost.trimmed());
+                    if (!targets.contains(url)) targets << url;
+                }
+            }
+            const int kMaxDirect = 8;
+            for (int i = 0; i < targets.size() && i < kMaxDirect; ++i) {
+                QString url = targets[i];
+                menu->addAction(QString(indent + "🌐 Open %1 through this proxy").arg(url), this, [this, socksPort, url]() {
+                    openProxyBrowser(socksPort, url);
+                });
+            }
+            menu->addAction(indent + (targets.isEmpty() ? "🌐 Open browser through this proxy..."
+                                                        : "🌐 Open another address through this proxy..."),
+                            this, [this, socksPort]() { openProxyBrowser(socksPort); });
             QString proxy = QString("socks5://localhost:%1").arg(tunnel.listenPort);
             menu->addAction(QString(indent + "📋 Copy proxy address %1").arg(proxy), this, [this, proxy]() {
                 QApplication::clipboard()->setText(proxy);
@@ -241,7 +258,7 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
                             "Firefox: Settings > Network Settings > Manual proxy configuration. "
                             "Set SOCKS Host to localhost, Port to %1, choose SOCKS v5 and tick "
                             "\"Proxy DNS when using SOCKS v5\".\n\n"
-                            "Chrome or Edge: \"Open browser through this proxy\" in this menu does it "
+                            "Chrome or Edge: the \"Open ... through this proxy\" entries in this menu do it "
                             "for you, or start a separate window with\n"
                             "  --proxy-server=\"socks5://localhost:%1\" --user-data-dir=<new folder>\n\n"
                             "Command line: curl --socks5-hostname localhost:%1 https://10.x.y.z/")
@@ -286,9 +303,9 @@ void TerminalWindow::editTunnels(QTreeWidgetItem *item)
     statusBar()->showMessage(QString("Saved tunnels of %1 - they start with its next SSH tab").arg(name), 5000);
 }
 
-// Tunnels menu > Open browser through this proxy: a separate Chrome-family
+// Tunnels menu > Open ... through this proxy: a separate Chrome-family
 // window with its own profile and --proxy-server pointing at the SOCKS port
-void TerminalWindow::openProxyBrowser(int port)
+void TerminalWindow::openProxyBrowser(int port, const QString &startUrl)
 {
     if (localPortFree(port)) {
         InWindowDialog::warning(this, "SOCKS Proxy Not Running",
@@ -297,8 +314,9 @@ void TerminalWindow::openProxyBrowser(int port)
                     "is logged in.").arg(port));
         return;
     }
-    QString url;
-    if (!askStartUrl(this, port, &url)) return;
+    // A menu entry names its address; otherwise ask for one
+    QString url = startUrl;
+    if (url.isEmpty() && !askStartUrl(this, port, &url)) return;
 
     QString error, browser;
     if (!ProxyBrowser::launch(port, url, &error, &browser)) {
