@@ -51,6 +51,38 @@ private slots:
         QVERIFY(ProxyBrowser::recentUrls(1235).isEmpty());  // Per port
     }
 
+    void namesAndRackSizedList()
+    {
+        for (int i = 1; i <= 18; ++i)
+            ProxyBrowser::remember(4000, QString("10.141.8.%1").arg(i), QString("bmc-%1").arg(i));
+        QCOMPARE(ProxyBrowser::recentUrls(4000).size(), 18);  // A whole rack is kept
+        QCOMPARE(ProxyBrowser::nameFor(4000, "https://10.141.8.7/"), QString("bmc-7"));
+        ProxyBrowser::remember(4000, "10.141.8.7");  // No name given: the known one stays
+        QCOMPARE(ProxyBrowser::nameFor(4000, "10.141.8.7"), QString("bmc-7"));
+
+        for (int i = 0; i < ProxyBrowser::kMaxRecentUrls + 5; ++i)
+            ProxyBrowser::remember(4001, QString("10.0.%1.1").arg(i), "n");
+        QCOMPARE(ProxyBrowser::recentUrls(4001).size(), ProxyBrowser::kMaxRecentUrls);
+        QVERIFY(ProxyBrowser::nameFor(4001, "10.0.0.1").isEmpty());  // Dropped with its address
+    }
+
+    void sortedByAddress()
+    {
+        QStringList urls = {"https://bmc-b/", "https://10.0.0.10/", "https://10.0.0.9/",
+                            "https://bmc-a/", "http://10.0.0.9:8080/"};
+        QCOMPARE(ProxyBrowser::sortedByAddress(urls),
+                 QStringList({"http://10.0.0.9:8080/", "https://10.0.0.9/", "https://10.0.0.10/",
+                              "https://bmc-a/", "https://bmc-b/"}));
+    }
+
+    void label()
+    {
+        QCOMPARE(ProxyBrowser::label("https://10.0.0.5/", "bmc-01"), QString("bmc-01 · 10.0.0.5"));
+        QCOMPARE(ProxyBrowser::label("https://10.0.0.5/", ""), QString("10.0.0.5"));
+        QCOMPARE(ProxyBrowser::label("http://10.0.0.5:8080/", ""), QString("http://10.0.0.5:8080/"));
+        QCOMPARE(ProxyBrowser::label("https://bmc-01/", "bmc-01"), QString("bmc-01"));
+    }
+
     void noBrowserGivesClearError()
     {
         qputenv("PATH", "/nonexistent");

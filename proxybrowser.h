@@ -36,9 +36,20 @@ QString normalizeUrl(const QString &text);
 bool launch(int port, const QString &url, QString *error, QString *started = nullptr);
 
 // Start addresses offered for a port: the last one used first. remember() puts
-// one at the front (the scan does this for the BMCs it routes through a proxy).
+// one at the front (the scan does this for the BMCs it routes through a proxy),
+// with a name such as the BMC's host name when one is known. A whole rack fits.
+const int kMaxRecentUrls = 64;
 QStringList recentUrls(int port);
-void remember(int port, const QString &url);
+void remember(int port, const QString &url, const QString &name = QString());
+QString nameFor(int port, const QString &url);
+
+// Sorted the way a rack reads: by IPv4 address (10.0.0.9 before 10.0.0.10),
+// host names after them alphabetically
+QStringList sortedByAddress(QStringList urls);
+
+// A menu label: "name · 10.0.0.5" for a plain https://<host>/ with a name,
+// otherwise the host (or the full URL when it has a path or another scheme)
+QString label(const QString &url, const QString &name);
 
 } // namespace ProxyBrowser
 

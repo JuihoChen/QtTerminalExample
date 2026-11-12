@@ -15,6 +15,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QDesktopServices>
+#include <QHash>
 #include <QHostAddress>
 #include <QMenu>
 #include <QNetworkProxy>
@@ -228,18 +229,33 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             // BMCs the scan routed through it), then what this tab forwards to
             // port 443, which the proxy reaches by its real IP as well
             QStringList targets = ProxyBrowser::recentUrls(socksPort);
+            QHash<QString, QString> names;
+            for (const QString &url : targets) names.insert(url, ProxyBrowser::nameFor(socksPort, url));
             for (const SSHTunnel &other : tunnels) {
                 if (other.type == SSHTunnel::Local && other.targetPort == 443 && !other.targetHost.trimmed().isEmpty()) {
                     QString url = ProxyBrowser::normalizeUrl(other.targetHost.trimmed());
                     if (!targets.contains(url)) targets << url;
+                    if (names.value(url).isEmpty()) names.insert(url, other.name.trimmed());
                 }
             }
-            const int kMaxDirect = 8;
-            for (int i = 0; i < targets.size() && i < kMaxDirect; ++i) {
-                QString url = targets[i];
-                menu->addAction(QString(indent + "🌐 Open %1 through this proxy").arg(url), this, [this, socksPort, url]() {
+            // A few go straight in the menu, newest first; a rack's worth get a
+            // submenu of their own, in address order
+            const int kMaxDirect = 5;
+            QMenu *targetMenu = menu;
+            QString targetIndent = indent;
+            if (targets.size() > kMaxDirect) {
+                targetMenu = menu->addMenu(QString(indent + "🌐 Open through this proxy (%1)").arg(targets.size()));
+                targetIndent.clear();
+                targets = ProxyBrowser::sortedByAddress(targets);
+            }
+            for (const QString &url : targets) {
+                QString text = targets.size() > kMaxDirect
+                    ? ProxyBrowser::label(url, names.value(url))
+                    : QString("Open %1 through this proxy").arg(ProxyBrowser::label(url, names.value(url)));
+                QAction *action = targetMenu->addAction(targetIndent + "🌐 " + text, this, [this, socksPort, url]() {
                     openProxyBrowser(socksPort, url);
                 });
+                action->setToolTip(url);
             }
             menu->addAction(indent + (targets.isEmpty() ? "🌐 Open browser through this proxy..."
                                                         : "🌐 Open another address through this proxy..."),

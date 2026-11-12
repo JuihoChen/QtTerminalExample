@@ -1214,7 +1214,7 @@ void HostScanTab::forwardBmcs()
         int port = socks ? socks->listenPort : socksPort->value();
         QList<quint32> chosen = copyableAddresses();
         for (int i = chosen.size() - 1; i >= 0; --i)
-            ProxyBrowser::remember(port, "https://" + formatIPv4(chosen[i]) + "/");
+            ProxyBrowser::remember(port, "https://" + formatIPv4(chosen[i]) + "/", m_names.value(chosen[i]));
     }
     if (!perBmc->isChecked() && !socks) {
         SSHTunnel t;
