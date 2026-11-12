@@ -16,6 +16,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QPushButton>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSet>
 #include <QSettings>
@@ -707,6 +708,13 @@ void addActions(QMenu *menu, QWidget *parent, const SSHConnection &via, bool thr
     add("⏹ Power off (force)" + more, ForceOff);
     add("🔁 Power cycle" + more, Cycle);
     add("↻ Reset" + more, Reset);
+    if (hooks.openConsole) {
+        menu->addSeparator();
+        std::function<void()> open = hooks.openConsole;
+        QAction *console = menu->addAction("🖥 Serial console (SOL)", parent, [open]() { open(); });
+        console->setToolTip("Opens a tab with the node's serial console (ipmitool sol activate). "
+                            "Type ~. at the start of a line to leave it.");
+    }
     menu->addSeparator();
     QString where = throughVia ? QString("Runs on %1 (Redfish, then ipmitool)").arg(via.name)
                                : QStringLiteral("Runs on this computer (Redfish, then ipmitool)");
@@ -723,6 +731,172 @@ void addActions(QMenu *menu, QWidget *parent, const SSHConnection &via, bool thr
             setSkipsConfirmation(host, false);
         });
     }
+}
+
+// A here-doc delimiter that is no line of text
+QString hereDocDelimiter(const QString &text)
+{
+    QString delimiter;
+    do {
+        delimiter = QString("BMC_%1").arg(QRandomGenerator::global()->generate64(), 16, 16, QChar('0'));
+    } while (text.split('\n').contains(delimiter));
+    return delimiter;
+}
+
+QByteArray consoleSetupScript(const QString &password, const QString &script)
+{
+    QString pw = password;
+    pw.remove('\n').remove('\r');
+    QString pwEnd = hereDocDelimiter(pw);
+    QString scriptEnd = hereDocDelimiter(script);
+    QString s;
+    s += "umask 077\n";
+    s += "d=${TMPDIR:-/tmp}\n";
+    // Files left by consoles that never started (the tab was closed first)
+    s += "find \"$d\" -maxdepth 1 -name 'bmcsol.*' -user \"$(id -u)\" -mmin +60 -exec rm -f {} + 2>/dev/null\n";
+    s += "f=$(mktemp \"$d/bmcsol.XXXXXX\") || exit 1\n";
+    s += "cat > \"$f\" <<'" + pwEnd + "'\n" + pw + "\n" + pwEnd + "\n";
+    s += "cat > \"$f.sh\" <<'" + scriptEnd + "'\n" + script + (script.endsWith('\n') ? "" : "\n") + scriptEnd + "\n";
+    s += "command -v ipmitool >/dev/null 2>&1 || echo NOIPMITOOL\n";
+    s += "echo \"FILE $f\"\n";
+    return s.toUtf8();
+}
+
+QString consoleCommand(const QString &passwordFile)
+{
+    return QString("sh %1 %2").arg(shellQuote(passwordFile + ".sh"), shellQuote(passwordFile));
+}
+
+QString consoleScript(const QString &host, const QString &name, const QString &username)
+{
+    QString s;
+    s += "f=$1\n";
+    s += "trap 'rm -f \"$f\" \"$f.sh\"' EXIT\n";
+    s += "trap 'exit 1' HUP INT TERM\n";
+    s += "H=" + shellQuote(host.trimmed()) + "\n";
+    s += "U=" + shellQuote(username) + "\n";
+    s += "B=" + shellQuote(describeBmc(host.trimmed(), name)) + "\n";
+    s += R"SH(sol() { ipmitool -I lanplus -H "$H" -U "$U" -f "$f" sol "$@"; }
+if ! command -v ipmitool >/dev/null 2>&1; then
+  echo "ipmitool is not installed on $(hostname), so the serial console can't be opened from there."
+  exit 1
+fi
+echo "Serial console of $B, through $(hostname)."
+echo "Leave it with ~. (tilde, then period) at the start of a line. ~? lists the other ~ commands."
+echo
+sol activate
+if [ $? -ne 0 ]; then
+  echo
+  printf 'The serial console did not open. If another SOL session holds it, close that one and try again? [y/N] '
+  read -r a
+  case "$a" in
+    y*|Y*) sol deactivate; sleep 1; sol activate ;;
+  esac
+fi
+echo
+echo "Serial console of $B closed."
+)SH";
+    return s;
+}
+
+namespace {
+
+// Makes the password file where the console will run and reports its path
+class ConsoleSetup : public QObject
+{
+public:
+    ConsoleSetup(QWidget *parent, const SSHConnection &via, bool throughVia, const QString &host,
+                 const QString &name, const Credentials &credentials,
+                 std::function<void(const QString &)> ready, const Hooks &hooks)
+        : QObject(parent), m_parent(parent), m_via(via), m_throughVia(throughVia), m_host(host),
+          m_name(name), m_credentials(credentials), m_ready(ready), m_hooks(hooks) {}
+
+    ~ConsoleSetup() override
+    {
+        if (m_worker) SftpWorker::retire(m_thread, m_worker);
+    }
+
+    void start()
+    {
+        QByteArray input = consoleSetupScript(m_credentials.password,
+                                              consoleScript(m_host, m_name, m_credentials.username));
+        if (m_hooks.status) {
+            m_hooks.status(QString("Opening the serial console of %1...").arg(describeBmc(m_host, m_name)));
+        }
+        if (!m_throughVia) {
+            QProcess process;
+            process.start("/bin/sh", QStringList() << "-s");
+            process.write(input);
+            process.closeWriteChannel();
+            process.waitForFinished(10000);
+            m_output = process.readAllStandardOutput();
+            finish(QString::fromUtf8(process.readAllStandardError()).trimmed());
+            return;
+        }
+        m_thread = new QThread(this);
+        m_worker = new SftpWorker(m_via);
+        m_worker->moveToThread(m_thread);
+        connect(m_worker, &SftpWorker::commandOutput, this, [this](const QByteArray &data) { m_output += data; });
+        connect(m_worker, &SftpWorker::commandFinished, this, [this](int, const QString &error) {
+            SftpWorker::retire(m_thread, m_worker);
+            m_worker = nullptr;
+            m_thread = nullptr;
+            finish(error.isEmpty() ? QString()
+                                   : QString("Could not log in to %1 (%2):\n%3").arg(m_via.name, m_via.host, error));
+        });
+        m_thread->start();
+        QMetaObject::invokeMethod(m_worker, "runCommandWithInput", Qt::QueuedConnection,
+                                  Q_ARG(QString, QStringLiteral("sh -s")), Q_ARG(QByteArray, input));
+    }
+
+private:
+    void finish(const QString &problem)
+    {
+        QString file;
+        bool noIpmitool = false;
+        for (const QByteArray &raw : m_output.split('\n')) {
+            QString line = QString::fromUtf8(raw).trimmed();
+            if (line.startsWith("FILE ")) file = line.mid(5).trimmed();
+            if (line == "NOIPMITOOL") noIpmitool = true;
+        }
+        QString where = m_throughVia ? m_via.name : QStringLiteral("this computer");
+        if (m_parent && (file.isEmpty() || noIpmitool)) {
+            QString text = noIpmitool
+                ? QString("ipmitool is not installed on %1, and the serial console needs it.\n\n"
+                          "Install it there (for example \"apt install ipmitool\" or \"dnf install ipmitool\").").arg(where)
+                : QString("Couldn't get %1 ready for the serial console.\n\n%2")
+                      .arg(where, problem.isEmpty() ? QStringLiteral("It gave no answer.") : problem);
+            if (m_hooks.status) m_hooks.status(QString("Serial console of %1 not opened").arg(describeBmc(m_host, m_name)));
+            InWindowDialog::warning(m_parent, "Serial Console", text);
+        } else if (m_parent && m_ready) {
+            m_ready(consoleCommand(file));
+        }
+        deleteLater();
+    }
+
+    QPointer<QWidget> m_parent;
+    SSHConnection m_via;
+    bool m_throughVia;
+    QString m_host;
+    QString m_name;
+    Credentials m_credentials;
+    std::function<void(const QString &)> m_ready;
+    Hooks m_hooks;
+    QThread *m_thread = nullptr;
+    SftpWorker *m_worker = nullptr;
+    QByteArray m_output;
+};
+
+} // namespace
+
+void prepareConsole(QWidget *parent, const SSHConnection &via, bool throughVia, const QString &host,
+                    const QString &name, std::function<void(const QString &command)> ready,
+                    const Hooks &hooks)
+{
+    Credentials credentials = savedCredentials(host);
+    if (!credentials.isValid() && !askCredentials(parent, host, name, &credentials)) return;
+    ConsoleSetup *setup = new ConsoleSetup(parent, via, throughVia, host, name, credentials, ready, hooks);
+    setup->start();
 }
 
 } // namespace BmcPower

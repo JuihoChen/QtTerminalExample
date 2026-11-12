@@ -520,6 +520,8 @@ void TerminalWindow::checkHandTypedSSH(QTermWidget *terminal)
 {
     int tabIndex = tabWidget->indexOf(terminal);
     if (tabIndex == -1) return;
+    // A BMC serial console tab runs ssh to the head node, but isn't its SSH tab
+    if (terminal->property("bmcConsole").toBool()) return;
     bool isSSH = terminal->property("isSSHTerminal").toBool();
     bool handTyped = terminal->property("handTypedSSH").toBool();
     if (isSSH && !handTyped) {

@@ -118,6 +118,8 @@ private:
     void updateTunnelsButton();
     void addTunnelActions(QMenu *menu, QTermWidget *terminal);
     void openProxyBrowser(int port, const QString &startUrl = QString());
+    // BMC serial console (IPMI SOL) in a new tab, run on via (or here)
+    void openBmcConsole(const SSHConnection &via, bool throughVia, const QString &host, const QString &name);
     void addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const QString &text,
                          const QString &host, const QString &name);
     QToolButton *tunnelsButton = nullptr;  // Status bar: the current SSH tab's tunnels

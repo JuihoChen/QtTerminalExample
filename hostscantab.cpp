@@ -1070,8 +1070,13 @@ void HostScanTab::showResultsMenu(const QPoint &pos)
                 self->m_power.insert(address, state);
                 self->setRowBmc(address);
             };
-            BmcPower::addActions(power, this, via ? *via : SSHConnection(), via != nullptr,
-                                 formatIPv4(address), m_names.value(address), hooks);
+            SSHConnection viaCopy = via ? *via : SSHConnection();
+            bool throughVia = via != nullptr;
+            QString host = formatIPv4(address), name = m_names.value(address);
+            hooks.openConsole = [self, viaCopy, throughVia, host, name]() {
+                if (self) emit self->openBmcConsole(viaCopy, throughVia, host, name);
+            };
+            BmcPower::addActions(power, this, viaCopy, throughVia, host, name, hooks);
         }
     }
     menu.exec(m_results->viewport()->mapToGlobal(pos));

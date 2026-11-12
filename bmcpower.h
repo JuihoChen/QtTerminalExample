@@ -68,7 +68,25 @@ QString stateLabel(const QString &powerState);
 struct Hooks {
     std::function<void(const QString &)> status;      // Progress for a status bar
     std::function<void(const QString &)> powerState;  // The state once known
+    // Set by the window: opens the BMC's serial console in a new tab. The
+    // menu offers "Serial console" only when this is set.
+    std::function<void()> openConsole;
 };
+
+// Serial console (IPMI Serial over LAN). consoleSetupScript(), run over
+// stdin where ipmitool will run, writes the BMC password to a file only the
+// user can read and the console script beside it (<file>.sh), then prints
+// "FILE <file>". consoleCommand(<file>) runs it in a terminal: "ipmitool
+// -I lanplus ... -f <file> sol activate", removing both files when it ends.
+// Leave the console with ~. at the start of a line.
+QString consoleScript(const QString &host, const QString &name, const QString &username);
+QByteArray consoleSetupScript(const QString &password, const QString &script);
+QString consoleCommand(const QString &passwordFile);
+// Asks for the BMC login if none is saved, writes the files where the
+// console runs, then calls ready with the command to run in a terminal there
+void prepareConsole(QWidget *parent, const SSHConnection &via, bool throughVia, const QString &host,
+                    const QString &name, std::function<void(const QString &command)> ready,
+                    const Hooks &hooks = Hooks());
 
 // Fills menu with Power status / on / off / cycle / reset for the BMC at
 // host. With throughVia the commands run on via over SSH, otherwise on this
