@@ -1,11 +1,15 @@
 #include "proxybrowser.h"
 
 #include <QDir>
+#include <QHostAddress>
 #include <QFileInfo>
 #include <QProcess>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QUrl>
+#include <QVariantMap>
+
+#include <algorithm>
 
 namespace ProxyBrowser {
 
@@ -43,6 +47,18 @@ QString windowsLocalAppData()
 QString settingsKey(int port)
 {
     return QString("socksBrowser/%1/recentUrls").arg(port);
+}
+
+QString namesKey(int port)
+{
+    return QString("socksBrowser/%1/names").arg(port);
+}
+
+// https://10.0.0.5/ and nothing more: shown as just its host
+bool isPlainHttps(const QUrl &url)
+{
+    return url.scheme() == "https" && (url.path().isEmpty() || url.path() == "/")
+        && url.port() == -1 && !url.hasQuery() && !url.hasFragment();
 }
 
 } // namespace
@@ -171,15 +187,52 @@ QStringList recentUrls(int port)
     return QSettings().value(settingsKey(port)).toStringList();
 }
 
-void remember(int port, const QString &url)
+void remember(int port, const QString &url, const QString &name)
 {
     QString normalized = normalizeUrl(url);
     if (normalized.isEmpty()) return;
+    QSettings settings;
     QStringList urls = recentUrls(port);
     urls.removeAll(normalized);
     urls.prepend(normalized);
-    while (urls.size() > 15) urls.removeLast();
-    QSettings().setValue(settingsKey(port), urls);
+    while (urls.size() > kMaxRecentUrls) urls.removeLast();
+    settings.setValue(settingsKey(port), urls);
+
+    // Names only for the addresses still listed, so the map can't grow forever
+    QVariantMap names = settings.value(namesKey(port)).toMap();
+    if (!name.trimmed().isEmpty()) names.insert(normalized, name.trimmed());
+    for (const QString &key : names.keys()) {
+        if (!urls.contains(key)) names.remove(key);
+    }
+    settings.setValue(namesKey(port), names);
+}
+
+QString nameFor(int port, const QString &url)
+{
+    return QSettings().value(namesKey(port)).toMap().value(normalizeUrl(url)).toString();
+}
+
+QStringList sortedByAddress(QStringList urls)
+{
+    std::stable_sort(urls.begin(), urls.end(), [](const QString &a, const QString &b) {
+        QString hostA = QUrl(a).host(), hostB = QUrl(b).host();
+        QHostAddress ipA, ipB;
+        bool isIpA = ipA.setAddress(hostA) && ipA.protocol() == QAbstractSocket::IPv4Protocol;
+        bool isIpB = ipB.setAddress(hostB) && ipB.protocol() == QAbstractSocket::IPv4Protocol;
+        if (isIpA != isIpB) return isIpA;
+        if (isIpA && ipA.toIPv4Address() != ipB.toIPv4Address()) return ipA.toIPv4Address() < ipB.toIPv4Address();
+        if (!isIpA && hostA != hostB) return hostA.compare(hostB, Qt::CaseInsensitive) < 0;
+        return a < b;
+    });
+    return urls;
+}
+
+QString label(const QString &url, const QString &name)
+{
+    QUrl parsed(url);
+    QString shown = isPlainHttps(parsed) ? parsed.host() : url;
+    if (name.trimmed().isEmpty() || name.trimmed() == shown) return shown;
+    return QString("%1 · %2").arg(name.trimmed(), shown);
 }
 
 } // namespace ProxyBrowser
