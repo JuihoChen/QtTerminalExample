@@ -1209,9 +1209,10 @@ void HostScanTab::forwardBmcs()
                        .arg(added.isEmpty() ? 0 : added.first().listenPort)
                        .arg(added.size() > 1 ? QString("-%1").arg(added.last().listenPort) : QString()));
     } else {
-        // The proxy browser offers these BMCs as its start page, last-checked first
+        // The proxy browser offers these BMCs as its start page, the first one
+        // first; those forwarded already count too, since the proxy reaches them
         int port = socks ? socks->listenPort : socksPort->value();
-        QList<quint32> chosen = checkedAddresses();
+        QList<quint32> chosen = copyableAddresses();
         for (int i = chosen.size() - 1; i >= 0; --i)
             ProxyBrowser::remember(port, "https://" + formatIPv4(chosen[i]) + "/");
     }
