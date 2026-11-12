@@ -54,6 +54,14 @@ void TerminalWindow::showConnectionContextMenu(const QPoint &pos)
             menu.addAction("🗑️ Delete Connection", [this, item]() {
                 deleteConnection(item);
             });
+            int tunnelCount = 0;
+            for (const SSHTunnel &t : qvariant_cast<SSHConnection>(connectionData).tunnels) {
+                if (t.enabled) ++tunnelCount;
+            }
+            menu.addAction(tunnelCount > 0 ? QString("🔀 Tunnels (%1)...").arg(tunnelCount)
+                                           : QString("🔀 Tunnels..."), [this, item]() {
+                editTunnels(item);
+            });
             menu.addSeparator();
             int index = item->data(0, Qt::UserRole + 1).toInt();
             QString folder = qvariant_cast<SSHConnection>(connectionData).folder;
@@ -122,6 +130,11 @@ void TerminalWindow::showTabContextMenu(const QPoint &pos)
             menu.addAction("📤 Upload File to Server...", [this, connection]() {
                 uploadFileToSSH(connection);
             });
+
+            if (!activeTunnels(terminal).isEmpty()) {
+                QMenu *tunnelsMenu = menu.addMenu("🔀 Tunnels");
+                addTunnelActions(tunnelsMenu, terminal);
+            }
         }
     }
     

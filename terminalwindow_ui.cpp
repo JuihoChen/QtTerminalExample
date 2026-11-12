@@ -185,6 +185,7 @@ void TerminalWindow::setupUI()
     mainLayout->addWidget(mainSplitter);
 
     setupFileBrowserDock();
+    setupTunnelsButton();
     
     statusBar()->showMessage("Ready");
     resize(1400, 800);
@@ -375,6 +376,7 @@ void TerminalWindow::showAbout() {
 
 void TerminalWindow::updateStatusBar()
 {
+    updateTunnelsButton();
     QTermWidget *terminal = getCurrentTerminal();
     if (!terminal) return;
     

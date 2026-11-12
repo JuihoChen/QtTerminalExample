@@ -3,9 +3,11 @@
 #include "enhanced_qtermwidget.h"
 #include "commandsafety.h"
 #include "hostscantab.h"
+#include "inwindowdialog.h"
 
 #include <QFont>
 #include <QTimer>
+#include <QPointer>
 #include <QApplication>
 #include <QLineEdit>
 #include <QEvent>
@@ -192,6 +194,11 @@ QTermWidget* TerminalWindow::createTerminalWidget()
     });
     connect(terminal, &QTermWidget::receivedData, this, [this, terminal, sshCheck](const QString &text) {
         if (terminal->property("isSSHTerminal").toBool()) {
+            // ssh goes on without a forward it couldn't open; say so plainly
+            if (text.contains("port forwarding failed") || text.contains("cannot listen to port")) {
+                statusBar()->showMessage("⚠️ A tunnel of this SSH tab could not be opened - "
+                                         "see the message in the terminal", 8000);
+            }
             if (text.contains("Connection to") && text.contains("closed.")) {
                 returnToLocalShell(terminal);
             } else {
@@ -236,9 +243,28 @@ QTermWidget* TerminalWindow::createSSHTerminal(const SSHConnection &connection)
     terminal->setShellProgram("/bin/bash");
     terminal->startShellProgram();
 
+    // Port forwards saved with the connection; ones whose local port is taken
+    // are left out (and reported) so the login itself still goes ahead
+    QStringList skippedTunnels;
+    QList<SSHTunnel> tunnels = startableTunnels(connection, &skippedTunnels);
+    terminal->setProperty("activeTunnels", QVariant::fromValue(tunnels));
+    if (!skippedTunnels.isEmpty()) {
+        QPointer<QTermWidget> guard(terminal);
+        QTimer::singleShot(0, this, [this, guard, skippedTunnels, connection]() {
+            if (!guard) return;
+            InWindowDialog::warning(this, "Tunnels Not Started",
+                QString("%1 opens without %2:\n\n%3\n\n"
+                        "Close whatever uses the port, or change the port (right-click the connection > "
+                        "Tunnels...), then connect again.")
+                    .arg(connection.name,
+                         skippedTunnels.size() == 1 ? QString("this tunnel") : QString("these tunnels"),
+                         skippedTunnels.join("\n")));
+        });
+    }
+
     // Build safe SSH command using the helper; once ssh exits, drop the
     // password from the local shell so later commands in this tab don't get it
-    QString sshCommand = CommandSafetyHelper::buildSafeSSHCommand(connection);
+    QString sshCommand = CommandSafetyHelper::buildSafeSSHCommand(connection, QString(), tunnels);
     if (!connection.password.isEmpty()) {
         sshCommand += "; unset SSHPASS";
     }
@@ -475,6 +501,7 @@ void TerminalWindow::returnToLocalShell(QTermWidget *terminal)
     tabWidget->setTabText(tabIndex, "Terminal");
     terminal->setProperty("isSSHTerminal", false);
     terminal->setProperty("sshConnection", QVariant());
+    terminal->setProperty("activeTunnels", QVariant());
     if (terminal == getCurrentTerminal()) updateFileBrowser();
     else removeFileBrowserPane(terminal);
     updateStatusBar();

@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QMetaType>
+#include "sshtunnel.h"
 
 // Structure to hold connection data
 struct SSHConnection {
@@ -19,6 +20,9 @@ struct SSHConnection {
     bool useKeyAuth;       // Enable key-based authentication options below
     QString identityFile;  // Private key file passed as "ssh -i" (optional)
     bool useAgent;         // Allow keys from the running ssh-agent
+
+    // Port forwards started with this connection's terminal tab
+    QList<SSHTunnel> tunnels;
     
     SSHConnection() : port(22), useKeyAuth(false), useAgent(true) {}
     SSHConnection(const QString &n, const QString &h, const QString &u, int p = 22, const QString &f = "", const QString &pass = "")
@@ -35,7 +39,8 @@ struct SSHConnection {
                folder == other.folder &&
                useKeyAuth == other.useKeyAuth &&
                identityFile == other.identityFile &&
-               useAgent == other.useAgent;
+               useAgent == other.useAgent &&
+               tunnels == other.tunnels;
     }
 
     // One entry of connections.json. Keys missing from files saved by older
@@ -51,6 +56,7 @@ struct SSHConnection {
         obj["useKeyAuth"] = useKeyAuth;
         obj["identityFile"] = identityFile;
         obj["useAgent"] = useAgent;
+        if (!tunnels.isEmpty()) obj["tunnels"] = SSHTunnel::listToJson(tunnels);
         return obj;
     }
 
@@ -65,6 +71,7 @@ struct SSHConnection {
         conn.useKeyAuth = obj["useKeyAuth"].toBool(false);
         conn.identityFile = obj["identityFile"].toString();
         conn.useAgent = obj["useAgent"].toBool(true);
+        conn.tunnels = SSHTunnel::listFromJson(obj["tunnels"].toArray());
         return conn;
     }
 };

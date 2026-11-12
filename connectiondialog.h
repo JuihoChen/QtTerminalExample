@@ -16,7 +16,7 @@
 #include <QCheckBox>
 #include <QTabWidget>
 
-struct SSHConnection; // Forward declaration
+#include "sshconnection.h"
 
 class ConnectionDialog : public QDialog
 {
@@ -64,6 +64,7 @@ private:
     QDialogButtonBox *buttonBox;
     
     bool editMode;
+    QList<SSHTunnel> keptTunnels;  // Edited in the Tunnels dialog; kept as they are here
 };
 
 #endif // CONNECTIONDIALOG_H

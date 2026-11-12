@@ -33,6 +33,29 @@ private slots:
         QVERIFY(back == c);
     }
 
+    void tunnelsRoundTrip()
+    {
+        SSHConnection c("BCM", "10.254.192.18", "root");
+        SSHTunnel web;
+        web.listenPort = 18081; web.targetHost = "localhost"; web.targetPort = 8081;
+        web.webPath = "/base-view";
+        SSHTunnel socks;
+        socks.type = SSHTunnel::Dynamic; socks.listenPort = 1080;
+        socks.targetHost.clear(); socks.targetPort = 0;
+        SSHTunnel back;
+        back.type = SSHTunnel::Remote; back.listenPort = 18000; back.targetPort = 8000;
+        back.enabled = false;
+        c.tunnels << web << socks << back;
+
+        QByteArray text = QJsonDocument(c.toJson()).toJson();
+        SSHConnection loaded = SSHConnection::fromJson(QJsonDocument::fromJson(text).object());
+        QVERIFY(loaded == c);
+        QCOMPARE(loaded.tunnels.size(), 3);
+        QCOMPARE(loaded.tunnels.at(0).urlPath(), QString("/base-view"));
+        QCOMPARE(loaded.tunnels.at(1).type, SSHTunnel::Dynamic);
+        QVERIFY(!loaded.tunnels.at(2).enabled);
+    }
+
     void keysWritten()
     {
         QJsonObject obj = SSHConnection("n", "h", "u").toJson();
