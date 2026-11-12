@@ -107,6 +107,49 @@ private:
         return p.readAllStandardOutput();
     }
 
+    // Runs a script with an ipmitool that logs its arguments and the password
+    // file's content, and fails "sol activate" while FAKE/busy exists
+    QByteArray runConsole(const QString &file, const QByteArray &input = QByteArray())
+    {
+        write("ipmitool", R"SH(#!/bin/sh
+echo "ipmitool $*" >> "$FAKE/log"
+while [ $# -gt 0 ]; do
+  case "$1" in -f) echo "pwfile $(cat "$2") $(stat -c %a "$2")" >> "$FAKE/log"; shift ;; esac
+  last=$1; shift
+done
+if [ "$last" = deactivate ]; then [ -e "$FAKE/busy" ] || { echo "Info: SOL payload already de-activated"; exit 1; }; rm -f "$FAKE/busy"; exit 0; fi
+if [ "$last" = activate ] && [ -e "$FAKE/busy" ]; then echo "Info: SOL payload already active on another session"; exit 1; fi
+echo "[SOL Session operational.  Use ~? for help]"
+)SH");
+        QFile::setPermissions(m_dir.filePath("ipmitool"), QFile::permissions(m_dir.filePath("curl")));
+        QProcess p;
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("PATH", m_dir.path() + ":/usr/bin:/bin");
+        env.insert("FAKE", m_dir.path());
+        env.insert("TMPDIR", m_dir.path());
+        p.setProcessEnvironment(env);
+        p.start("/bin/sh", {"-c", consoleCommand(file)});
+        p.write(input);
+        p.closeWriteChannel();
+        p.waitForFinished(20000);
+        return p.readAllStandardOutput();
+    }
+
+    QString makePasswordFile(const QString &name = QString())
+    {
+        QProcess p;
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("TMPDIR", m_dir.path());
+        p.setProcessEnvironment(env);
+        p.start("/bin/sh", {"-s"});
+        p.write(consoleSetupScript(m_password, consoleScript("10.141.8.101", name, "admin")));
+        p.closeWriteChannel();
+        p.waitForFinished(10000);
+        QString out = QString::fromUtf8(p.readAllStandardOutput());
+        int at = out.indexOf("FILE ");
+        return at < 0 ? QString() : out.mid(at + 5).trimmed();
+    }
+
 private slots:
     void initTestCase()
     {
@@ -125,6 +168,7 @@ private slots:
         write("log", "");
         QFile::remove(m_dir.filePath("mode"));
         QFile::remove(m_dir.filePath("allowed"));
+        QFile::remove(m_dir.filePath("busy"));
     }
 
     void statusThroughRedfish()
@@ -174,7 +218,7 @@ private slots:
         QVERIFY2(r.ok, qPrintable(r.error));
         QCOMPARE(r.method, QString("IPMI (ipmitool)"));
         QCOMPARE(r.resetType, QString("ipmitool power cycle"));
-        QVERIFY(read("log").contains("ipmitool -I lanplus -H 10.141.8.101 -U admin -E"));
+        QVERIFY(read("log").contains("ipmitool -I lanplus -C 17 -H 10.141.8.101 -U admin -E"));
     }
 
     void unreachableRedfishFallsBackToIpmi()
@@ -234,6 +278,63 @@ private slots:
         QVERIFY(!r.ok);
         QVERIFY2(r.error.contains("Host is busy"), qPrintable(r.error));
         QVERIFY2(r.error.contains("HTTP 400"), qPrintable(r.error));
+    }
+
+    void consolePasswordFileIsPrivate()
+    {
+        QString file = makePasswordFile();
+        QVERIFY(!file.isEmpty());
+        QVERIFY(file.startsWith(m_dir.path() + "/bmcsol."));
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(f.readAll()), m_password + "\n");
+        QCOMPARE(f.permissions() & (QFile::ReadGroup | QFile::ReadOther | QFile::WriteGroup | QFile::WriteOther),
+                 QFile::Permissions());
+        f.remove();
+        QFile::remove(file + ".sh");
+    }
+
+    void consoleRunsSolWithThePasswordFile()
+    {
+        QString file = makePasswordFile("gb-bmc");
+        QVERIFY(QFile::exists(file + ".sh"));
+        QByteArray out = runConsole(file);
+        QVERIFY2(out.contains("Serial console of gb-bmc (10.141.8.101)"), out.constData());
+        QVERIFY(out.contains("~."));
+        QVERIFY(out.contains("SOL Session operational"));
+        QByteArray log = read("log");
+        QVERIFY2(log.contains("ipmitool -I lanplus -C 17 -H 10.141.8.101 -U admin -f " + file.toUtf8() + " sol activate"),
+                 log.constData());
+        QVERIFY(log.contains("pwfile " + m_password.toUtf8() + " 600"));
+        QVERIFY(!QFile::exists(file));  // Removed when the console ends
+        QVERIFY(!QFile::exists(file + ".sh"));
+        // The password itself never on ipmitool's command line
+        for (const QByteArray &line : log.split('\n')) {
+            if (line.startsWith("ipmitool")) QVERIFY(!line.contains("p@ss"));
+        }
+    }
+
+    void consoleTakesOverABusySession()
+    {
+        write("busy", "");  // Another session, such as the BMC web console, holds SOL
+        QString file = makePasswordFile();
+        QByteArray out = runConsole(file);
+        QVERIFY2(out.contains("SOL Session operational"), out.constData());
+        QVERIFY(!out.contains("already active"));
+        QByteArray log = read("log");
+        int deactivate = log.indexOf("sol deactivate");
+        QVERIFY(deactivate >= 0);
+        QVERIFY(deactivate < log.indexOf("sol activate"));
+        QCOMPARE(log.count("sol activate"), 1);
+        QVERIFY(!QFile::exists(file));
+    }
+
+    void consoleOpensWhenNothingHoldsIt()
+    {
+        QString file = makePasswordFile();
+        QByteArray out = runConsole(file);
+        QVERIFY(out.contains("SOL Session operational"));
+        QVERIFY(!out.contains("de-activated"));  // deactivate's complaint stays hidden
     }
 
     void stateLabels()

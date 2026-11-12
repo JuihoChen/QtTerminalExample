@@ -2,6 +2,7 @@
 // button and tab menu that show them with "Open in browser" / "Copy address"
 #include "terminalwindow.h"
 #include "bmcpower.h"
+#include "commandsafety.h"
 #include "inwindowdialog.h"
 #include "proxybrowser.h"
 #include "tunnelsdialog.h"
@@ -23,6 +24,7 @@
 #include <QProcess>
 #include <QStatusBar>
 #include <QTcpServer>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidgetItem>
 #include <QUrl>
@@ -112,7 +114,7 @@ QString bmcHostOf(const QString &url)
 
 } // namespace
 
-// "⚡ BMC power" for one BMC the tab's tunnels lead to. The commands run on
+// "🛠 BMC actions" for one BMC the tab's tunnels lead to. The commands run on
 // the tab's server, which reaches the BMC by its own address.
 void TerminalWindow::addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const QString &text,
                                      const QString &host, const QString &name)
@@ -128,7 +130,55 @@ void TerminalWindow::addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const Q
     hooks.status = [self](const QString &message) {
         if (self) self->statusBar()->showMessage(message, 8000);
     };
+    hooks.openConsole = [self, via, host, name]() {
+        if (self) self->openBmcConsole(via, true, host, name);
+    };
     BmcPower::addActions(power, this, via, true, host, name, hooks);
+}
+
+// A tab running the BMC's serial console: "ssh -t" to via with the console
+// script, or the script right here. ssh's own ~ escapes are turned off
+// (-e none) so ~. reaches ipmitool and leaves the console, not the login.
+void TerminalWindow::openBmcConsole(const SSHConnection &via, bool throughVia, const QString &host,
+                                    const QString &name)
+{
+    QPointer<TerminalWindow> self = this;
+    BmcPower::Hooks hooks;
+    hooks.status = [self](const QString &message) {
+        if (self) self->statusBar()->showMessage(message, 8000);
+    };
+    BmcPower::prepareConsole(this, via, throughVia, host, name, [self, via, throughVia, host, name](const QString &consoleCommand) {
+        if (!self) return;
+        QTermWidget *terminal = self->createTerminalWidget();
+        // Not an SSH tab of via: no file browser or tunnels, and the
+        // hand-typed ssh check leaves it alone
+        terminal->setProperty("bmcConsole", true);
+        QString command;
+        if (throughVia) {
+            terminal->setEnvironment(CommandSafetyHelper::passwordEnvironment(via));
+            command = CommandSafetyHelper::buildPasswordPrefix(via) + "ssh -t -e none "
+                    + CommandSafetyHelper::buildCommonOptions(via);
+            if (via.port != 22) command += QString("-p %1 ").arg(via.port);
+            command += QString("%1@%2 %3").arg(CommandSafetyHelper::escapeShellArgument(via.username),
+                                               CommandSafetyHelper::escapeShellArgument(via.host),
+                                               CommandSafetyHelper::escapeShellArgument(consoleCommand));
+            if (!via.password.isEmpty()) command += "; unset SSHPASS";
+        } else {
+            command = consoleCommand;
+        }
+        // When the console ends the tab waits for Enter, so its last words stay readable
+        command += "; echo; read -r -p 'Press Enter to close this tab.' _; exit";
+        terminal->setShellProgram("/bin/bash");
+        terminal->startShellProgram();
+        QString label = name.isEmpty() ? host : name;
+        self->addTerminalTab(terminal, QString("SOL: %1").arg(label));
+        QTimer::singleShot(300, terminal, [terminal, command]() {
+            terminal->sendText("clear\n");
+            QTimer::singleShot(100, terminal, [terminal, command]() { terminal->sendText(command + "\n"); });
+        });
+        self->statusBar()->showMessage(QString("Serial console of %1 - leave it with ~. at the start of a line")
+                                           .arg(label), 8000);
+    }, hooks);
 }
 
 // The tunnels a new SSH tab for this connection can start. A local port that
@@ -255,7 +305,7 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             // A forward to port 443 is most likely a BMC (the scan makes these)
             if (https && tunnel.targetPort == 443 && !tunnel.targetHost.trimmed().isEmpty()
                 && tunnel.targetHost.trimmed() != "localhost") {
-                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power", tunnel.targetHost.trimmed(), tunnel.name.trimmed());
+                addBmcPowerMenu(menu, terminal, indent + "🛠 BMC actions", tunnel.targetHost.trimmed(), tunnel.name.trimmed());
             }
         } else if (tunnel.type == SSHTunnel::Dynamic) {
             int socksPort = tunnel.listenPort;
@@ -301,10 +351,10 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             }
             if (bmcs.size() == 1) {
                 const QString &url = bmcs.first();
-                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power · " + ProxyBrowser::label(url, names.value(url)),
+                addBmcPowerMenu(menu, terminal, indent + "🛠 BMC actions · " + ProxyBrowser::label(url, names.value(url)),
                                 bmcHostOf(url), names.value(url));
             } else if (!bmcs.isEmpty()) {
-                QMenu *powerMenu = menu->addMenu(QString(indent + "⚡ BMC power (%1)").arg(bmcs.size()));
+                QMenu *powerMenu = menu->addMenu(QString(indent + "🛠 BMC actions (%1)").arg(bmcs.size()));
                 for (const QString &url : ProxyBrowser::sortedByAddress(bmcs)) {
                     addBmcPowerMenu(powerMenu, terminal, ProxyBrowser::label(url, names.value(url)),
                                     bmcHostOf(url), names.value(url));

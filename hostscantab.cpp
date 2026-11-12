@@ -859,7 +859,7 @@ void HostScanTab::setRowBmc(quint32 address)
     }
     if (m_power.contains(address)) {
         bmc += "  ·  " + BmcPower::stateLabel(m_power.value(address));
-        tip += "\n\nPower state from the last power command (right-click for BMC power)";
+        tip += "\n\nPower state from the last power command (right-click for BMC actions)";
     }
     row->setText(BmcColumn, bmc);
     row->setToolTip(BmcColumn, tip);
@@ -1056,7 +1056,7 @@ void HostScanTab::showResultsMenu(const QPoint &pos)
     quint32 address = clicked ? clicked->data(IpColumn, Qt::UserRole).toUInt() : 0;
     if (clicked && !many && m_web.contains(address)) {
         menu.addSeparator();
-        QMenu *power = menu.addMenu("⚡ BMC power");
+        QMenu *power = menu.addMenu("🛠 BMC actions");
         const SSHConnection *via = scannedThrough();
         if (!m_scanFromKey.isEmpty() && !via) {
             power->setEnabled(false);
@@ -1070,8 +1070,13 @@ void HostScanTab::showResultsMenu(const QPoint &pos)
                 self->m_power.insert(address, state);
                 self->setRowBmc(address);
             };
-            BmcPower::addActions(power, this, via ? *via : SSHConnection(), via != nullptr,
-                                 formatIPv4(address), m_names.value(address), hooks);
+            SSHConnection viaCopy = via ? *via : SSHConnection();
+            bool throughVia = via != nullptr;
+            QString host = formatIPv4(address), name = m_names.value(address);
+            hooks.openConsole = [self, viaCopy, throughVia, host, name]() {
+                if (self) emit self->openBmcConsole(viaCopy, throughVia, host, name);
+            };
+            BmcPower::addActions(power, this, viaCopy, throughVia, host, name, hooks);
         }
     }
     menu.exec(m_results->viewport()->mapToGlobal(pos));

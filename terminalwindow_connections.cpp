@@ -453,6 +453,7 @@ void TerminalWindow::scanForHosts(int fromConnection, const QString &folder)
             statusBar()->showMessage(QString("Imported %1 connection(s)").arg(imported.size()), 3000);
         });
         // BMCs found through a head node become tunnels on its connection
+        connect(hostScanTab, &HostScanTab::openBmcConsole, this, &TerminalWindow::openBmcConsole);
         connect(hostScanTab, &HostScanTab::addTunnels, this,
                 [this](const SSHConnection &via, const QList<SSHTunnel> &tunnels, bool connectNow) {
             int index = -1;
