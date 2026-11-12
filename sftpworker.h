@@ -76,6 +76,9 @@ public slots:
     // Runs a shell command on the server (no SFTP needed), sending its
     // output as it arrives with commandOutput(), then commandFinished()
     void runCommand(const QString &command);
+    // The same, with input written to the command's stdin and then closed.
+    // Secrets go this way so they never show on the server's command lines.
+    void runCommandWithInput(const QString &command, const QByteArray &input);
 
 signals:
     // busy(true) when a request starts and busy(false) when it ends; step()

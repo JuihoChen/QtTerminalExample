@@ -243,6 +243,11 @@ void SftpWorker::connectToServer()
 
 void SftpWorker::runCommand(const QString &command)
 {
+    runCommandWithInput(command, QByteArray());
+}
+
+void SftpWorker::runCommandWithInput(const QString &command, const QByteArray &input)
+{
     BusyScope scope(this);
     QString error;
     if (!ensureSession(&error)) {
@@ -258,6 +263,15 @@ void SftpWorker::runCommand(const QString &command)
         if (channel) ssh_channel_free(channel);
         emit commandFinished(-1, error);
         return;
+    }
+    if (!input.isEmpty()) {
+        int written = 0;
+        while (written < input.size()) {
+            int n = ssh_channel_write(channel, input.constData() + written, uint32_t(input.size() - written));
+            if (n <= 0) break;
+            written += n;
+        }
+        ssh_channel_send_eof(channel);
     }
 
     char buffer[4096];
@@ -287,7 +301,7 @@ void SftpWorker::runCommand(const QString &command)
         while ((errBytes = ssh_channel_read_nonblocking(channel, errBuffer, sizeof(errBuffer), 1)) > 0) {
             emit commandErrorOutput(QByteArray(errBuffer, errBytes));
         }
-        ssh_channel_send_eof(channel);
+        if (input.isEmpty()) ssh_channel_send_eof(channel);
         status = ssh_channel_get_exit_status(channel);
     }
     ssh_channel_close(channel);
