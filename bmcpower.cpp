@@ -784,15 +784,10 @@ fi
 echo "Serial console of $B, through $(hostname)."
 echo "Leave it with ~. (tilde, then period) at the start of a line. ~? lists the other ~ commands."
 echo
+# Only one SOL session at a time, and the BMC's web console often holds
+# it: take it over, so activate doesn't fail with "already active"
+sol deactivate >/dev/null 2>&1 && sleep 1
 sol activate
-if [ $? -ne 0 ]; then
-  echo
-  printf 'The serial console did not open. If another SOL session holds it, close that one and try again? [y/N] '
-  read -r a
-  case "$a" in
-    y*|Y*) sol deactivate; sleep 1; sol activate ;;
-  esac
-fi
 echo
 echo "Serial console of $B closed."
 )SH";

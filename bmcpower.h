@@ -77,7 +77,8 @@ struct Hooks {
 // stdin where ipmitool will run, writes the BMC password to a file only the
 // user can read and the console script beside it (<file>.sh), then prints
 // "FILE <file>". consoleCommand(<file>) runs it in a terminal: "ipmitool
-// -I lanplus ... -f <file> sol activate", removing both files when it ends.
+// -I lanplus ... -f <file> sol deactivate", then "sol activate" (taking the
+// console over from another session), removing both files when it ends.
 // Leave the console with ~. at the start of a line.
 QString consoleScript(const QString &host, const QString &name, const QString &username);
 QByteArray consoleSetupScript(const QString &password, const QString &script);

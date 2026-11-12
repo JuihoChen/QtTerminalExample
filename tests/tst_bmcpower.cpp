@@ -117,7 +117,8 @@ while [ $# -gt 0 ]; do
   case "$1" in -f) echo "pwfile $(cat "$2") $(stat -c %a "$2")" >> "$FAKE/log"; shift ;; esac
   last=$1; shift
 done
-if [ "$last" = activate ] && [ -e "$FAKE/busy" ]; then echo "Info: SOL payload already active on another session"; rm -f "$FAKE/busy"; exit 1; fi
+if [ "$last" = deactivate ]; then [ -e "$FAKE/busy" ] || { echo "Info: SOL payload already de-activated"; exit 1; }; rm -f "$FAKE/busy"; exit 0; fi
+if [ "$last" = activate ] && [ -e "$FAKE/busy" ]; then echo "Info: SOL payload already active on another session"; exit 1; fi
 echo "[SOL Session operational.  Use ~? for help]"
 )SH");
         QFile::setPermissions(m_dir.filePath("ipmitool"), QFile::permissions(m_dir.filePath("curl")));
@@ -313,25 +314,27 @@ private slots:
         }
     }
 
-    void consoleOffersToTakeOverABusySession()
+    void consoleTakesOverABusySession()
     {
-        write("busy", "");
+        write("busy", "");  // Another session, such as the BMC web console, holds SOL
         QString file = makePasswordFile();
-        QByteArray out = runConsole(file, "y\n");
-        QVERIFY2(out.contains("close that one and try again"), out.constData());
+        QByteArray out = runConsole(file);
+        QVERIFY2(out.contains("SOL Session operational"), out.constData());
+        QVERIFY(!out.contains("already active"));
         QByteArray log = read("log");
-        QVERIFY(log.contains("sol deactivate"));
-        QCOMPARE(log.count("sol activate"), 2);
+        int deactivate = log.indexOf("sol deactivate");
+        QVERIFY(deactivate >= 0);
+        QVERIFY(deactivate < log.indexOf("sol activate"));
+        QCOMPARE(log.count("sol activate"), 1);
         QVERIFY(!QFile::exists(file));
     }
 
-    void consoleBusySessionLeftAloneOnNo()
+    void consoleOpensWhenNothingHoldsIt()
     {
-        write("busy", "");
         QString file = makePasswordFile();
-        runConsole(file, "\n");
-        QVERIFY(!read("log").contains("sol deactivate"));
-        QVERIFY(!QFile::exists(file));
+        QByteArray out = runConsole(file);
+        QVERIFY(out.contains("SOL Session operational"));
+        QVERIFY(!out.contains("de-activated"));  // deactivate's complaint stays hidden
     }
 
     void stateLabels()
