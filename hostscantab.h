@@ -12,6 +12,7 @@
 
 QT_BEGIN_NAMESPACE
 class QBoxLayout;
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -55,13 +56,22 @@ public:
     void takeBackImportSection();
 
     // Builds the scan script; public so it can be tested on its own
-    static QString scanScript(quint32 start, quint32 end, int port, int timeoutSeconds);
+    static QString scanScript(quint32 start, quint32 end, int port, int timeoutSeconds,
+                              bool findBmcs = false);
+    static QString redfishSummary(const QByteArray &serviceRoot);
+    // Local ports for one forward per BMC: from `first` up, skipping the ports
+    // in `taken` and any that canBind says this PC can't open
+    static QList<int> pickLocalPorts(int count, int first, const QSet<int> &taken,
+                                     bool (*canBind)(int port));
     static bool parseIPv4(const QString &text, quint32 *address);
     static QString formatIPv4(quint32 address);
 
 signals:
     // The new connections to save; hosts that already have one are left out
     void importConnections(const QList<SSHConnection> &connections);
+    // Port forwards to add to the saved connection the scan ran through
+    // (found by folder and name); connectNow opens its SSH tab to start them
+    void addTunnels(const SSHConnection &via, const QList<SSHTunnel> &tunnels, bool connectNow);
 
 private slots:
     void onScanFromChanged();
@@ -69,6 +79,7 @@ private slots:
     void stopScan();
     void importChecked();
     void updateImportButton();
+    void forwardBmcs();
 
 private:
     void setDefaultRange();
@@ -84,10 +95,13 @@ private:
     QString stderrTail() const;
     QTreeWidgetItem *rowFor(quint32 address);
     void setRowSsh(QTreeWidgetItem *row, PortState state);
+    void setRowBmc(quint32 address);
+    void updateForwardButton();
     void showStatus(const QString &text, bool isError = false);
     void setScanning(bool scanning);
     void stopRemoteWorker();
     const SSHConnection *scanFromConnection() const;
+    const SSHConnection *scannedThrough() const;
 
     QList<SSHConnection> m_connections;
     QSet<QString> m_savedHosts;
@@ -96,12 +110,14 @@ private:
     QLineEdit *m_endEdit;
     PortComboBox *m_portCombo;
     QSpinBox *m_timeoutSpin;
+    QCheckBox *m_bmcCheck;
     QComboBox *m_scanFromCombo;
     QLabel *m_scanFromNote;
     QPushButton *m_scanButton;
     QPushButton *m_stopButton;
     QProgressBar *m_progress;
     QLabel *m_statusLabel;
+    QPushButton *m_forwardButton;
     QTreeWidget *m_results;
     QComboBox *m_folderCombo;
     QLineEdit *m_usernameEdit;
@@ -132,7 +148,14 @@ private:
     bool m_noPing;
     QHash<quint32, QTreeWidgetItem *> m_rows;
     QHash<quint32, PortState> m_ports;
-    QHash<quint32, QString> m_macs;   // From the ARP table and the scanning host's own addresses
+    QHash<quint32, QString> m_macs;
+    // Looking for BMCs (port 443, then Redfish)
+    bool m_findBmcs;
+    bool m_noCurl;
+    QString m_scanFromKey;            // Folder and name of the connection the last scan ran through
+    QSet<quint32> m_web;              // Port 443 open
+    QHash<quint32, QString> m_redfish;  // Answered Redfish: vendor and product
+    QHash<quint32, QString> m_names;  // From /etc/hosts or DNS on the scanning host   // From the ARP table and the scanning host's own addresses
 };
 
 #endif // HOSTSCANTAB_H
