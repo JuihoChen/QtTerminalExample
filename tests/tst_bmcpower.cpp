@@ -218,7 +218,7 @@ private slots:
         QVERIFY2(r.ok, qPrintable(r.error));
         QCOMPARE(r.method, QString("IPMI (ipmitool)"));
         QCOMPARE(r.resetType, QString("ipmitool power cycle"));
-        QVERIFY(read("log").contains("ipmitool -I lanplus -H 10.141.8.101 -U admin -E"));
+        QVERIFY(read("log").contains("ipmitool -I lanplus -C 17 -H 10.141.8.101 -U admin -E"));
     }
 
     void unreachableRedfishFallsBackToIpmi()
@@ -303,7 +303,7 @@ private slots:
         QVERIFY(out.contains("~."));
         QVERIFY(out.contains("SOL Session operational"));
         QByteArray log = read("log");
-        QVERIFY2(log.contains("ipmitool -I lanplus -H 10.141.8.101 -U admin -f " + file.toUtf8() + " sol activate"),
+        QVERIFY2(log.contains("ipmitool -I lanplus -C 17 -H 10.141.8.101 -U admin -f " + file.toUtf8() + " sol activate"),
                  log.constData());
         QVERIFY(log.contains("pwfile " + m_password.toUtf8() + " 600"));
         QVERIFY(!QFile::exists(file));  // Removed when the console ends

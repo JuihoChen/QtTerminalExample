@@ -527,11 +527,11 @@ if [ "$done" != 1 ] && [ "$nofb" != 1 ]; then
 )SH";
     s += "    IPMI_PASSWORD=" + shellQuote(password) + "; export IPMI_PASSWORD\n";
     s += R"SH(    if [ "$A" != status ]; then
-      o=$(ipmitool -I lanplus -H "$H" -U "$U" -E -N 5 -R 2 chassis power "$IA" 2>&1); e=$?
+      o=$(ipmitool -I lanplus -C 17 -H "$H" -U "$U" -E -N 5 -R 2 chassis power "$IA" 2>&1); e=$?
       echo "IPMI_ACTION $e $IA $(printf '%s' "$o" | one)"
       [ "$e" = 0 ] && sleep 6
     fi
-    o=$(ipmitool -I lanplus -H "$H" -U "$U" -E -N 5 -R 2 chassis power status 2>&1); e=$?
+    o=$(ipmitool -I lanplus -C 17 -H "$H" -U "$U" -E -N 5 -R 2 chassis power status 2>&1); e=$?
     echo "IPMI_STATUS $e $(printf '%s' "$o" | one)"
   else
     echo NOIPMITOOL
@@ -776,7 +776,7 @@ QString consoleScript(const QString &host, const QString &name, const QString &u
     s += "H=" + shellQuote(host.trimmed()) + "\n";
     s += "U=" + shellQuote(username) + "\n";
     s += "B=" + shellQuote(describeBmc(host.trimmed(), name)) + "\n";
-    s += R"SH(sol() { ipmitool -I lanplus -H "$H" -U "$U" -f "$f" sol "$@"; }
+    s += R"SH(sol() { ipmitool -I lanplus -C 17 -H "$H" -U "$U" -f "$f" sol "$@"; }
 if ! command -v ipmitool >/dev/null 2>&1; then
   echo "ipmitool is not installed on $(hostname), so the serial console can't be opened from there."
   exit 1
