@@ -2,10 +2,18 @@
 // button and tab menu that show them with "Open in browser" / "Copy address"
 #include "terminalwindow.h"
 #include "inwindowdialog.h"
+#include "proxybrowser.h"
 #include "tunnelsdialog.h"
 
 #include <QApplication>
 #include <QClipboard>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <QDesktopServices>
 #include <QHostAddress>
 #include <QMenu>
@@ -46,6 +54,49 @@ void openInBrowser(const QString &url)
 QString webUrl(const SSHTunnel &tunnel, bool https)
 {
     return QString("%1://localhost:%2%3").arg(https ? "https" : "http").arg(tunnel.listenPort).arg(tunnel.urlPath());
+}
+
+// Asks which address the proxy browser opens first: the ones used before on
+// this port (and BMCs the scan routed through it) are in the list. Returns
+// false on Cancel; an empty *url means a blank page.
+bool askStartUrl(QWidget *parent, int port, QString *url)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle("Open Browser Through Proxy");
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    QLabel *label = new QLabel(QString(
+        "Starts a separate browser window whose traffic goes through the SOCKS proxy on "
+        "port %1, so it can open any address the server can reach, such as a BMC by its IP.\n\n"
+        "Address to open (optional):").arg(port), &dialog);
+    label->setWordWrap(true);
+    layout->addWidget(label);
+
+    QComboBox *combo = new QComboBox(&dialog);
+    combo->setEditable(true);
+    combo->setInsertPolicy(QComboBox::NoInsert);
+    combo->addItems(ProxyBrowser::recentUrls(port));
+    combo->lineEdit()->setPlaceholderText("e.g. 10.0.0.5 or https://bmc-01/");
+    combo->setMinimumWidth(360);
+    layout->addWidget(combo);
+
+    QLabel *note = new QLabel("It uses its own profile, so your normal browser and its tabs are left "
+                              "alone. BMCs often have self-signed certificates: the browser will ask "
+                              "you to proceed past a warning.", &dialog);
+    note->setWordWrap(true);
+    note->setStyleSheet("QLabel { color: #666; }");
+    layout->addWidget(note);
+
+    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("Open Browser");
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    combo->setFocus();
+    combo->lineEdit()->selectAll();
+
+    if (InWindowDialog::exec(&dialog) != QDialog::Accepted) return false;
+    *url = combo->currentText().trimmed();
+    return true;
 }
 
 } // namespace
@@ -172,6 +223,10 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
                 statusBar()->showMessage("Copied " + address, 3000);
             });
         } else if (tunnel.type == SSHTunnel::Dynamic) {
+            int socksPort = tunnel.listenPort;
+            menu->addAction(indent + "🌐 Open browser through this proxy...", this, [this, socksPort]() {
+                openProxyBrowser(socksPort);
+            });
             QString proxy = QString("socks5://localhost:%1").arg(tunnel.listenPort);
             menu->addAction(QString(indent + "📋 Copy proxy address %1").arg(proxy), this, [this, proxy]() {
                 QApplication::clipboard()->setText(proxy);
@@ -186,7 +241,8 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
                             "Firefox: Settings > Network Settings > Manual proxy configuration. "
                             "Set SOCKS Host to localhost, Port to %1, choose SOCKS v5 and tick "
                             "\"Proxy DNS when using SOCKS v5\".\n\n"
-                            "Chrome or Edge: start a separate window with\n"
+                            "Chrome or Edge: \"Open browser through this proxy\" in this menu does it "
+                            "for you, or start a separate window with\n"
                             "  --proxy-server=\"socks5://localhost:%1\" --user-data-dir=<new folder>\n\n"
                             "Command line: curl --socks5-hostname localhost:%1 https://10.x.y.z/")
                         .arg(port));
@@ -228,4 +284,27 @@ void TerminalWindow::editTunnels(QTreeWidgetItem *item)
     refreshConnectionTree();
     updateStatusBar();
     statusBar()->showMessage(QString("Saved tunnels of %1 - they start with its next SSH tab").arg(name), 5000);
+}
+
+// Tunnels menu > Open browser through this proxy: a separate Chrome-family
+// window with its own profile and --proxy-server pointing at the SOCKS port
+void TerminalWindow::openProxyBrowser(int port)
+{
+    if (localPortFree(port)) {
+        InWindowDialog::warning(this, "SOCKS Proxy Not Running",
+            QString("Nothing is listening on port %1 yet: the login hasn't finished, or ssh "
+                    "couldn't open the proxy (see the terminal). Try again once the SSH tab "
+                    "is logged in.").arg(port));
+        return;
+    }
+    QString url;
+    if (!askStartUrl(this, port, &url)) return;
+
+    QString error, browser;
+    if (!ProxyBrowser::launch(port, url, &error, &browser)) {
+        InWindowDialog::warning(this, "Couldn't Open Browser", error);
+        return;
+    }
+    ProxyBrowser::remember(port, url);
+    statusBar()->showMessage(QString("Started %1 through the SOCKS proxy on port %2").arg(browser).arg(port), 5000);
 }
