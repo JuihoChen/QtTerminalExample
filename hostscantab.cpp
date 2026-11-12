@@ -859,7 +859,7 @@ void HostScanTab::setRowBmc(quint32 address)
     }
     if (m_power.contains(address)) {
         bmc += "  ·  " + BmcPower::stateLabel(m_power.value(address));
-        tip += "\n\nPower state from the last power command (right-click for BMC power)";
+        tip += "\n\nPower state from the last power command (right-click for BMC actions)";
     }
     row->setText(BmcColumn, bmc);
     row->setToolTip(BmcColumn, tip);
@@ -1056,7 +1056,7 @@ void HostScanTab::showResultsMenu(const QPoint &pos)
     quint32 address = clicked ? clicked->data(IpColumn, Qt::UserRole).toUInt() : 0;
     if (clicked && !many && m_web.contains(address)) {
         menu.addSeparator();
-        QMenu *power = menu.addMenu("⚡ BMC power");
+        QMenu *power = menu.addMenu("🛠 BMC actions");
         const SSHConnection *via = scannedThrough();
         if (!m_scanFromKey.isEmpty() && !via) {
             power->setEnabled(false);

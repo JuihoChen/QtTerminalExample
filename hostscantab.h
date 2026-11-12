@@ -80,7 +80,7 @@ signals:
     // Port forwards to add to the saved connection the scan ran through
     // (found by folder and name); connectNow opens its SSH tab to start them
     void addTunnels(const SSHConnection &via, const QList<SSHTunnel> &tunnels, bool connectNow);
-    // BMC power > Serial console on a result row: run on via, or here
+    // BMC actions > Serial console on a result row: run on via, or here
     void openBmcConsole(const SSHConnection &via, bool throughVia, const QString &host, const QString &name);
 
 private slots:

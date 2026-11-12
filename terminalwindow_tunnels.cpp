@@ -114,7 +114,7 @@ QString bmcHostOf(const QString &url)
 
 } // namespace
 
-// "⚡ BMC power" for one BMC the tab's tunnels lead to. The commands run on
+// "🛠 BMC actions" for one BMC the tab's tunnels lead to. The commands run on
 // the tab's server, which reaches the BMC by its own address.
 void TerminalWindow::addBmcPowerMenu(QMenu *menu, QTermWidget *terminal, const QString &text,
                                      const QString &host, const QString &name)
@@ -305,7 +305,7 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             // A forward to port 443 is most likely a BMC (the scan makes these)
             if (https && tunnel.targetPort == 443 && !tunnel.targetHost.trimmed().isEmpty()
                 && tunnel.targetHost.trimmed() != "localhost") {
-                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power", tunnel.targetHost.trimmed(), tunnel.name.trimmed());
+                addBmcPowerMenu(menu, terminal, indent + "🛠 BMC actions", tunnel.targetHost.trimmed(), tunnel.name.trimmed());
             }
         } else if (tunnel.type == SSHTunnel::Dynamic) {
             int socksPort = tunnel.listenPort;
@@ -351,10 +351,10 @@ void TerminalWindow::addTunnelActions(QMenu *menu, QTermWidget *terminal)
             }
             if (bmcs.size() == 1) {
                 const QString &url = bmcs.first();
-                addBmcPowerMenu(menu, terminal, indent + "⚡ BMC power · " + ProxyBrowser::label(url, names.value(url)),
+                addBmcPowerMenu(menu, terminal, indent + "🛠 BMC actions · " + ProxyBrowser::label(url, names.value(url)),
                                 bmcHostOf(url), names.value(url));
             } else if (!bmcs.isEmpty()) {
-                QMenu *powerMenu = menu->addMenu(QString(indent + "⚡ BMC power (%1)").arg(bmcs.size()));
+                QMenu *powerMenu = menu->addMenu(QString(indent + "🛠 BMC actions (%1)").arg(bmcs.size()));
                 for (const QString &url : ProxyBrowser::sortedByAddress(bmcs)) {
                     addBmcPowerMenu(powerMenu, terminal, ProxyBrowser::label(url, names.value(url)),
                                     bmcHostOf(url), names.value(url));

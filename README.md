@@ -15,7 +15,7 @@ A modern Qt-based terminal emulator with built-in SSH connection management, fea
 - **🔐 SSH Key Authentication** - Per-connection private key file (`ssh -i`) and SSH agent support
 - **🔀 SSH Tunnels** - Per-connection port forwards (`-L`, `-R`) and SOCKS proxies (`-D`) that start with the SSH tab, with "Open in browser" for web pages
 - **🖥️ BMC discovery** - The SSH scan can find BMCs (Redfish on port 443) through a head node and turn them into that node's tunnels
-- **⚡ BMC power** - Power status, on, off, cycle, reset and the serial console (SOL) for a BMC, run on the head node over Redfish (ipmitool as a fallback), with a confirmation before anything disruptive
+- **🛠 BMC actions** - Power status, on, off, cycle, reset and the serial console (SOL) for a BMC, run on the head node over Redfish (ipmitool as a fallback), with a confirmation before anything disruptive
 - **🔌 One-Click SSH Connections** - Automatic SSH with password authentication using sshpass
 - **🙈 Hidden Saved Passwords** - Saved passwords go to `sshpass -e` through the environment, never shown on screen, in shell history or in `ps`
 - **📂 File Browser** - WinSCP-style SFTP browser docked beside the terminal: browse the server, drag files and folders down or up, edit remote files in your own editor, watch transfer progress
@@ -184,9 +184,9 @@ Find the machines in an IP range that accept SSH, like mRemoteNG's Port Scan but
 
   Leave **Open an SSH tab to ... now** ticked to start them right away. The tunnels are saved with the connection, so they start with its SSH tabs from then on; edit or remove them with **🔀 Tunnels...**.
 
-## BMC Power
+## BMC Actions
 
-Check a node's power and turn it on, off or around without opening the BMC's web page. Right-click a BMC row in the SSH Scan results, or open the SSH tab's **🔀 N tunnels** button, and choose **⚡ BMC power** (it is on each forward to port 443, and on the SOCKS proxy for the BMCs it reaches):
+Check a node's power, turn it on, off or around, or open its serial console, without opening the BMC's web page. Right-click a BMC row in the SSH Scan results, or open the SSH tab's **🔀 N tunnels** button, and choose **🛠 BMC actions** (it is on each forward to port 443, and on the SOCKS proxy for the BMCs it reaches):
 
 - **🔎 Power status**, **▶ Power on**, **⏻ Shut down (graceful)...**, **⏹ Power off (force)...**, **🔁 Power cycle...** and **↻ Reset...**. Shut down, Power off, Power cycle and Reset ask "Really ...?" first, with No as the default. Tick **Don't ask again for this BMC** there to skip the question for that BMC from then on (its menu entries lose their "..."); **Ask before shut down, power off, cycle and reset again** in its menu turns it back on.
 - **Where it runs** - On the connection the scan ran through, or the SSH tab's own server (such as a BCM head node), since this PC usually can't reach the BMCs. It logs in to that connection like the file browser does, so it needs the connection's saved password or SSH key. A scan from this computer runs them here.
